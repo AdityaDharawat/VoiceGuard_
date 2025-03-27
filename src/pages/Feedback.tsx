@@ -1,12 +1,8 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-<<<<<<< HEAD
-import { FiSend, FiMessageSquare, FiThumbsUp, FiThumbsDown } from 'react-icons/fi';
+import { FiSend, FiMessageSquare, FiStar, FiAward, FiGift } from 'react-icons/fi';
 import axios from 'axios';
 import React from 'react';
-=======
-import { FiSend, FiMessageSquare, FiStar, FiAward, FiGift } from 'react-icons/fi';
->>>>>>> ccc85ef (authentication page updated)
 
 const Feedback = () => {
     const [feedbackType, setFeedbackType] = useState<'general' | 'bug' | 'suggestion' | 'compliment'>('general');
