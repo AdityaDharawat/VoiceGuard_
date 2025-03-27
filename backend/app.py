@@ -7,7 +7,7 @@ from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 import os
 import json
-
+import dotenv
 import smtplib
 from email.message import EmailMessage
 # from deepfake_detector import analyze_audio  # Your deepfake detection logic
@@ -101,8 +101,8 @@ def share_report():
 
     if method == "email":
         try:
-            email_sender = "your-email@gmail.com"
-            email_password = "your-email-password"
+            email_sender = os.getenv("EMAIL_SENDER")
+            email_password = os.getenv("EMAIL_PASSWORD")
 
             msg = EmailMessage()
             msg["Subject"] = "Voice Analysis Report"
