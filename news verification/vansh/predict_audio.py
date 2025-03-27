@@ -2,8 +2,8 @@ import os
 import numpy as np
 import pandas as pd
 import librosa
-from tensorflow.keras.models import load_model  # Keras model loading
-from sklearn.preprocessing import StandardScaler
+import joblib  # For loading the SVM model
+from sklearn.preprocessing import StandardScaler  # Import StandardScaler
 
 def extract_audio_features(audio_path):
     """
@@ -59,24 +59,24 @@ def predict_audio_class(model, audio_path):
     df = pd.DataFrame([features])
     
     # Scale the features using StandardScaler
-    scaler = StandardScaler()
-    features_scaled = scaler.fit_transform(df)
+    scaler = StandardScaler()  # Initialize StandardScaler
+    features_scaled = scaler.fit_transform(df)  # Fitting and transforming the features
     
-    # Make prediction using the trained model
+    # Make prediction using the trained SVM model
     prediction = model.predict(features_scaled)
     
     # Print the prediction result
-    if prediction[0] > 0.5:
+    if prediction[0] < 0.8:
         print("The audio is REAL.")
     else:
         print("The audio is FAKE.")
 
 def main():
-    # Load the trained Keras model
+    # Load the trained SVM model using joblib
     try:
-        model = load_model("F:/Hackverse Ulhas/Hackverse_NeuralNinjas.py/news verification/vansh/Random Forest.h5")
+        model = joblib.load("models\SVM_model.joblib")
     except Exception as e:
-        print(f"Error loading the Keras model: {e}")
+        print(f"Error loading the SVM model: {e}")
         return
     
     # Ask the user for the path to the audio file
