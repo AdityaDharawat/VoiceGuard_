@@ -10,11 +10,17 @@ import json
 import dotenv
 import smtplib
 from email.message import EmailMessage
+from pymongo import MongoClient
 # from deepfake_detector import analyze_audio  # Your deepfake detection logic
 # from audio_recorder import record_audio  # Function to record audio
 
 app = Flask(__name__)
 CORS(app)
+
+# ✅ Connect to MongoDB (Local or Atlas)
+client = MongoClient("mongodb://localhost:27017/VoiceGuard")  # Change to Atlas URL if needed
+db = client["VoiceGuard"]  # Database name
+collection = db["Feedback"]  # Collection name
 
 UPLOAD_FOLDER = "uploads"
 REPORTS_FOLDER = "reports"
@@ -30,15 +36,37 @@ def get_data():
     return jsonify({"message": "Hello from Flask!"})
 
 @app.route('/api/feedback', methods=['POST'])  #set up this as path for post req http://127.0.0.1:5000/api/feedback
+# def receive_feedback():
+#     data = request.json
+#     feedback_type = data.get('feedbackType')
+#     message = data.get('message')
+#     rating = data.get('rating')
+
+#     print(f"Received feedback: Type={feedback_type}, Message={message}, Rating={rating}")
+
+#     return jsonify({"message": "Feedback received successfully"}), 200
 def receive_feedback():
-    data = request.json
-    feedback_type = data.get('feedbackType')
-    message = data.get('message')
-    rating = data.get('rating')
+    try:
+        data = request.json
+        feedback_type = data.get('feedbackType')
+        message = data.get('message')
+        rating = data.get('rating')
 
-    print(f"Received feedback: Type={feedback_type}, Message={message}, Rating={rating}")
+        if not feedback_type or not message or rating is None:
+            return jsonify({"error": "Missing required fields"}), 400
 
-    return jsonify({"message": "Feedback received successfully"}), 200
+        # ✅ Save to MongoDB
+        feedback_data = {
+            "feedbackType": feedback_type,
+            "message": message,
+            "rating": rating
+        }
+        result = collection.insert_one(feedback_data)  # Insert into MongoDB
+
+        return jsonify({"message": "Feedback saved successfully", "id": str(result.inserted_id)}), 201
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 # 1. Endpoint to analyze an uploaded audio file
 @app.route('/analyze-audio', methods=['POST'])
