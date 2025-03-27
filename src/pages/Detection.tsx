@@ -1,6 +1,6 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiUpload, FiMic, FiDownload, FiRefreshCw, FiMail, FiShare2, FiActivity } from 'react-icons/fi';
+import { FiUpload, FiMic, FiDownload, FiRefreshCw, FiMail, FiShare2, FiActivity, FiUser, FiMapPin, FiSmartphone, FiGlobe } from 'react-icons/fi';
 
 interface AnalysisFeature {
   name: string;
@@ -13,11 +13,22 @@ interface AnalysisResults {
   features: AnalysisFeature[];
 }
 
+interface SourceDetails {
+  name: string;
+  ipAddress: string;
+  phoneNumber: string;
+  location: string;
+  timestamp: string;
+}
+
 const Detection = () => {
   const [file, setFile] = useState<File | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [results, setResults] = useState<AnalysisResults | null>(null);
+  const [showSourceIdentification, setShowSourceIdentification] = useState(false);
+  const [sourceDetails, setSourceDetails] = useState<SourceDetails | null>(null);
+  const [isIdentifying, setIsIdentifying] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -71,24 +82,14 @@ const Detection = () => {
     }
   };
 
-  const startRecording = async () => {
-    setIsRecording(true);
-    
-    try {
-      // Simulate recording API call
-      // In a real implementation:
-      // const response = await fetch("http://localhost:5000/record-audio", { method: "POST" });
-      
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      
-      // Simulated recording result
+  const toggleRecording = async () => {
+    if (isRecording) {
+      setIsRecording(false);
       const mockFile = new File([""], "recording.wav", { type: "audio/wav" });
       setFile(mockFile);
       await analyzeFile(mockFile);
-    } catch (error) {
-      console.error("Error during recording:", error);
-    } finally {
-      setIsRecording(false);
+    } else {
+      setIsRecording(true);
     }
   };
 
@@ -122,6 +123,39 @@ const Detection = () => {
     } catch (error) {
       console.error(`Error sharing via ${method}:`, error);
     }
+  };
+
+  const generateMockSourceDetails = (): SourceDetails => {
+    const randomNumbers = () => Math.floor(Math.random() * 256);
+    return {
+      name: `John Doe ${Math.floor(Math.random() * 1000)}`,
+      ipAddress: `${randomNumbers()}.${randomNumbers()}.${randomNumbers()}.${randomNumbers()}`,
+      phoneNumber: `+1 (${Math.floor(Math.random() * 900) + 100}) ${Math.floor(Math.random() * 900) + 100}-${Math.floor(Math.random() * 9000) + 1000}`,
+      location: `${['New York', 'Los Angeles', 'Chicago', 'San Francisco', 'Miami'][Math.floor(Math.random() * 5)]}, USA`,
+      timestamp: new Date().toLocaleString()
+    };
+  };
+
+  const handleSourceIdentification = async () => {
+    if (!results || !results.isDeepfake) return;
+
+    setShowSourceIdentification(true);
+    setIsIdentifying(true);
+
+    try {
+      await new Promise(resolve => setTimeout(resolve, 2500));
+      const details = generateMockSourceDetails();
+      setSourceDetails(details);
+    } catch (error) {
+      console.error("Error identifying source:", error);
+    } finally {
+      setIsIdentifying(false);
+    }
+  };
+
+  const closeSourceIdentification = () => {
+    setShowSourceIdentification(false);
+    setSourceDetails(null);
   };
 
   return (
@@ -171,8 +205,7 @@ const Detection = () => {
               <motion.button
                 whileTap={{ scale: 0.95 }}
                 className={`relative w-24 h-24 rounded-full flex items-center justify-center mx-auto shadow-lg ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-blue-600 hover:bg-blue-700'} transition-all duration-300 text-white`}
-                onClick={startRecording}
-                disabled={isRecording}
+                onClick={toggleRecording}
               >
                 <FiMic className="w-8 h-8" />
                 {isRecording && (
@@ -345,6 +378,101 @@ const Detection = () => {
                 <FiShare2 className="mr-2" /> Share via WhatsApp
               </motion.button>
             </div>
+
+            {results.isDeepfake && (
+              <motion.button
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={handleSourceIdentification}
+                className="flex items-center px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-all mt-4"
+              >
+                Identify Source
+              </motion.button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showSourceIdentification && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 20 }}
+              className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md p-8 relative"
+            >
+              {isIdentifying ? (
+                <div className="text-center">
+                  <motion.div
+                    animate={{ rotate: 360 }}
+                    transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                    className="relative w-24 h-24 mx-auto mb-6"
+                  >
+                    <div className="absolute inset-0 rounded-full bg-blue-100 dark:bg-blue-900 opacity-75"></div>
+                    <div className="absolute inset-2 rounded-full bg-blue-200 dark:bg-blue-800 flex items-center justify-center">
+                      <FiGlobe className="w-12 h-12 text-blue-600 dark:text-blue-300" />
+                    </div>
+                  </motion.div>
+                  <h3 className="text-2xl font-semibold mb-2 dark:text-white">Identifying Source</h3>
+                  <p className="text-gray-500 dark:text-gray-400">Tracing origin of synthetic voice...</p>
+                </div>
+              ) : sourceDetails ? (
+                <motion.div 
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                >
+                  <div className="absolute top-4 right-4">
+                    <button 
+                      onClick={closeSourceIdentification}
+                      className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <h3 className="text-2xl font-bold mb-6 dark:text-white">Source Identification</h3>
+                  <div className="space-y-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl p-6">
+                    <div className="flex items-center space-x-4">
+                      <FiUser className="w-6 h-6 text-blue-600 dark:text-blue-300" />
+                      <div>
+                        <p className="text-sm text-gray-500 dark:text-gray-300">Name</p>
+                        <p className="font-semibold dark:text-white">{sourceDetails.name}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-4">
+                      <FiGlobe className="w-6 h-6 text-green-600 dark:text-green-300" />
+                      <div>
+                        <p className="text-sm text-gray-500 dark:text-gray-300">IP Address</p>
+                        <p className="font-semibold dark:text-white">{sourceDetails.ipAddress}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-4">
+                      <FiSmartphone className="w-6 h-6 text-purple-600 dark:text-purple-300" />
+                      <div>
+                        <p className="text-sm text-gray-500 dark:text-gray-300">Phone Number</p>
+                        <p className="font-semibold dark:text-white">{sourceDetails.phoneNumber}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center space-x-4">
+                      <FiMapPin className="w-6 h-6 text-red-600 dark:text-red-300" />
+                      <div>
+                        <p className="text-sm text-gray-500 dark:text-gray-300">Location</p>
+                        <p className="font-semibold dark:text-white">{sourceDetails.location}</p>
+                      </div>
+                    </div>
+                    <div className="text-xs text-gray-400 dark:text-gray-500 text-right mt-2">
+                      {sourceDetails.timestamp}
+                    </div>
+                  </div>
+                </motion.div>
+              ) : null}
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
