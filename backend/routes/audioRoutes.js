@@ -1,8 +1,8 @@
-const express = require("express");
-const mongoose = require("mongoose");
-const multer = require("multer");
-const { GridFSBucket } = require("mongodb");
-const { authenticate } = require("./authRoutes");
+import express from "express";
+import mongoose from "mongoose";
+import multer from "multer";
+import { GridFSBucket } from "mongodb";
+import { authenticate } from "./authRoutes.js";
 
 const router = express.Router();
 

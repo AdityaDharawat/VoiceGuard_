@@ -1,9 +1,10 @@
-const express = require("express");
-const jwt = require("jsonwebtoken");
-const bcrypt = require("bcrypt");
-const User = require("../models/userModel");
-require("dotenv").config();
+import express from "express";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcrypt";
+import User from "../models/userModel.js";
+import dotenv from "dotenv";
 
+dotenv.config();
 const router = express.Router();
 
 // Generate JWT Token
