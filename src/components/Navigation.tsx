@@ -1,11 +1,12 @@
 import React from 'react';
-import { Shield, Home, BarChart2, MessageSquare, Menu, X, LogIn } from 'lucide-react';
+import { Shield, Home, BarChart2, MessageSquare, Menu, X, LogIn, Mic } from 'lucide-react';
 import { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 
 const Navigation = () => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
 
   const navItems = [
     { path: '/', label: 'Home', icon: Home },
@@ -21,12 +22,12 @@ const Navigation = () => {
           <div className="flex items-center">
             <Link to="/" className="flex items-center space-x-2">
               <Shield className="w-8 h-8 text-blue-600" />
-              <span className="font-semibold text-xl  dark:text-gray-300">VoiceGuard</span>
+              <span className="font-semibold text-xl dark:text-gray-300">VoiceGuard</span>
             </Link>
           </div>
 
           {/* Desktop Navigation */}
-          <div className="hidden md:flex items-center space-x-8">
+          <div className="hidden md:flex items-center space-x-4">
             {navItems.map((item) => {
               const Icon = item.icon;
               return (
@@ -44,9 +45,24 @@ const Navigation = () => {
                 </Link>
               );
             })}
+            
+            {/* Generate Audio Button */}
+            <button
+              onClick={() => navigate('/deepfake-audio')}
+              className={`flex items-center space-x-1 px-3 py-2 rounded-lg transition-all duration-200 ${
+                location.pathname === '/deepfake-audio'
+                  ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20'
+                  : 'text-gray-600 hover:text-blue-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800/50'
+              }`}
+            >
+              <Mic className="w-5 h-5" />
+              <span>Generate Audio</span>
+            </button>
+            
+            {/* Login Button */}
             <Link 
               to="/auth" 
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-all flex items-center space-x-2"
+              className="flex items-center space-x-1 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all"
             >
               <LogIn className="w-5 h-5" />
               <span>Login</span>
@@ -57,7 +73,7 @@ const Navigation = () => {
           <div className="md:hidden flex items-center">
             <button
               onClick={() => setIsOpen(!isOpen)}
-              className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500"
+              className="inline-flex items-center justify-center p-2 rounded-md text-gray-400 hover:text-gray-500 hover:bg-gray-100 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-blue-500 dark:hover:bg-gray-800"
             >
               {isOpen ? (
                 <X className="block h-6 w-6" />
@@ -90,9 +106,27 @@ const Navigation = () => {
               </Link>
             );
           })}
+          
+          {/* Generate Audio Button (Mobile) */}
+          <button
+            onClick={() => {
+              navigate('/deepfake-audio');
+              setIsOpen(false);
+            }}
+            className={`flex items-center space-x-2 px-3 py-2 rounded-md text-base font-medium w-full ${
+              location.pathname === '/deepfake-audio'
+                ? 'text-blue-600 bg-blue-50 dark:bg-blue-900/20'
+                : 'text-gray-600 hover:text-blue-600 hover:bg-gray-50 dark:text-gray-300 dark:hover:bg-gray-800/50'
+            }`}
+          >
+            <Mic className="w-5 h-5" />
+            <span>Generate Audio</span>
+          </button>
+          
+          {/* Login Button (Mobile) */}
           <Link 
             to="/auth" 
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg transition-all flex items-center space-x-2"
+            className="flex items-center space-x-2 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-base font-medium"
             onClick={() => setIsOpen(false)}
           >
             <LogIn className="w-5 h-5" />

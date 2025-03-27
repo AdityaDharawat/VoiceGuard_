@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FiUpload, FiMic, FiDownload, FiRefreshCw, FiMail, FiShare2, FiActivity, FiUser, FiMapPin, FiSmartphone, FiGlobe } from 'react-icons/fi';
 import axios from 'axios';
@@ -30,6 +30,10 @@ const Detection = () => {
   const [showSourceIdentification, setShowSourceIdentification] = useState(false);
   const [sourceDetails, setSourceDetails] = useState<SourceDetails | null>(null);
   const [isIdentifying, setIsIdentifying] = useState(false);
+  const [transcript, setTranscript] = useState('');
+  const [isSpeechSupported, setIsSpeechSupported] = useState(false);
+  const [permissionDenied, setPermissionDenied] = useState(false);
+  const [speechError, setSpeechError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -141,26 +145,14 @@ const Detection = () => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       setFile(e.dataTransfer.files[0]);
-      analyzeFile(e.dataTransfer.files[0]);
+      analyzeFile();
     }
   };
 
-  const analyzeFile = async (file: File) => {
+  const analyzeFile = async () => {
     setIsAnalyzing(true);
-    
-    try {
-      // Simulate API call
-      const formData = new FormData();
-      formData.append("file", file);
-      
-      // In a real implementation, you would use:
-      // const response = await fetch("http://localhost:5000/analyze-audio", {
-      //   method: "POST",
-      //   body: formData,
-      // });
-      // const data = await response.json();
 
-      // Simulated response
+    try {
       await new Promise(resolve => setTimeout(resolve, 2000));
       const data: AnalysisResults = {
         isDeepfake: Math.random() > 0.7,
@@ -195,13 +187,14 @@ const Detection = () => {
   const resetAnalysis = () => {
     setFile(null);
     setResults(null);
+    setTranscript('');
+    setPermissionDenied(false);
   };
 
   const downloadReport = async () => {
     if (!results) return;
-    
+
     try {
-      // Simulate report generation
       await new Promise(resolve => setTimeout(resolve, 500));
       alert("Report downloaded successfully (simulated)");
     } catch (error) {
@@ -216,7 +209,6 @@ const Detection = () => {
     if (!recipient) return;
 
     try {
-      // Simulate sharing
       await new Promise(resolve => setTimeout(resolve, 500));
       alert(`Report shared via ${method} to ${recipient} (simulated)`);
     } catch (error) {
@@ -225,18 +217,24 @@ const Detection = () => {
   };
 
   const generateMockSourceDetails = (): SourceDetails => {
-    const randomNumbers = () => Math.floor(Math.random() * 256);
+    const randomNumbers = (): number => Math.floor(Math.random() * 256);
     return {
-      name: `John Doe ${Math.floor(Math.random() * 1000)}`,
-      ipAddress: `${randomNumbers()}.${randomNumbers()}.${randomNumbers()}.${randomNumbers()}`,
-      phoneNumber: `+1 (${Math.floor(Math.random() * 900) + 100}) ${Math.floor(Math.random() * 900) + 100}-${Math.floor(Math.random() * 9000) + 1000}`,
-      location: `${['New York', 'Los Angeles', 'Chicago', 'San Francisco', 'Miami'][Math.floor(Math.random() * 5)]}, USA`,
-      timestamp: new Date().toLocaleString()
+        name: `User ${Math.floor(Math.random() * 1000)}`,
+        ipAddress: `${randomNumbers()}.${randomNumbers()}.${randomNumbers()}.${randomNumbers()}`,
+        phoneNumber: `+1 (${Math.floor(Math.random() * 900) + 100}) ${Math.floor(Math.random() * 900) + 100}-${Math.floor(Math.random() * 9000) + 1000}`,
+        location: ['New York', 'Los Angeles', 'Chicago', 'San Francisco', 'Miami'][Math.floor(Math.random() * 5)],
+        timestamp: new Date().toLocaleString()
     };
-  };
-
+};
   const handleSourceIdentification = async () => {
-    if (!results || !results.isDeepfake) return;
+    if (!results || !results.isDeepfake || !file) return;
+
+    const fileKey = file.name; // Use file name as a unique key
+    if (cachedSourceDetails.has(fileKey)) {
+      setSourceDetails(cachedSourceDetails.get(fileKey) || null);
+      setShowSourceIdentification(true);
+      return;
+    }
 
     setShowSourceIdentification(true);
     setIsIdentifying(true);
@@ -244,6 +242,7 @@ const Detection = () => {
     try {
       await new Promise(resolve => setTimeout(resolve, 2500));
       const details = generateMockSourceDetails();
+      setCachedSourceDetails((prev) => new Map(prev).set(fileKey, details));
       setSourceDetails(details);
     } catch (error) {
       console.error("Error identifying source:", error);
@@ -258,15 +257,37 @@ const Detection = () => {
   };
 
   return (
-    <div className="container mx-auto px-4 pt-28 py-12">
+    <div className="container mx-auto px-4 pt-28 py-12 text-white">
       <motion.h1 
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4 }}
-        className="text-3xl md:text-4xl font-bold mb-8 dark:text-white"
+        className="text-3xl md:text-4xl font-bold mb-8"
       >
         Voice Authenticity Analysis
       </motion.h1>
+
+      {permissionDenied && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded"
+          role="alert"
+        >
+          <p className="text-red">Microphone access was denied. Please allow microphone permissions to use this feature.</p>
+        </motion.div>
+      )}
+
+      {speechError && (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="bg-red-700 border-l-4 border-red-500 text-red-100 p-4 mb-6 rounded"
+          role="alert"
+        >
+          <p className="text-white">Speech recognition error: {speechError}</p>
+        </motion.div>
+      )}
 
       <AnimatePresence mode="wait">
         {!file && !results && (
@@ -285,8 +306,8 @@ const Detection = () => {
               onDrop={handleDrop}
             >
               <FiUpload className="mx-auto w-12 h-12 text-gray-400 mb-4" />
-              <h3 className="text-xl font-semibold mb-2 dark:text-white">Upload Voice Sample</h3>
-              <p className="text-gray-500 dark:text-gray-400 mb-4">Drag & drop an audio file here, or click to browse</p>
+              <h3 className="text-xl font-semibold mb-2">Upload Voice Sample</h3>
+              <p className="mb-4">Drag & drop an audio file here, or click to browse</p>
               <button className="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
                 Select File
               </button>
@@ -346,7 +367,7 @@ const Detection = () => {
                   <FiActivity className="w-12 h-12 text-blue-600 dark:text-blue-300" />
                 </div>
               </motion.div>
-              <h3 className="text-2xl font-semibold mb-2 dark:text-white">Analyzing Voice Sample</h3>
+              <h3 className="text-2xl font-semibold mb-2">Analyzing Voice Sample</h3>
               <p className="text-gray-500 dark:text-gray-400">Our AI is examining spectral patterns and vocal biomarkers...</p>
             </div>
 
@@ -371,7 +392,7 @@ const Detection = () => {
           >
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8">
               <div>
-                <h3 className="text-2xl font-semibold dark:text-white">Analysis Results</h3>
+                <h3 className="text-2xl font-semibold">Analysis Results</h3>
                 <p className="text-gray-500 dark:text-gray-400">Detailed authenticity assessment</p>
               </div>
               <motion.button
@@ -392,7 +413,7 @@ const Detection = () => {
             >
               <div className="flex items-center justify-between">
                 <div>
-                  <h4 className="text-lg font-semibold dark:text-white">
+                  <h4 className="text-lg font-semibold">
                     {results.isDeepfake ? 'Potential Deepfake Detected' : 'Authentic Voice Sample'}
                   </h4>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -415,8 +436,8 @@ const Detection = () => {
                   className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4"
                 >
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium dark:text-gray-300">{feature.name}</span>
-                    <span className="text-sm font-semibold dark:text-white">{feature.value}%</span>
+                    <span className="text-sm font-medium">{feature.name}</span>
+                    <span className="text-sm font-semibold">{feature.value}%</span>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
                     <motion.div 
@@ -430,8 +451,17 @@ const Detection = () => {
               ))}
             </div>
 
+            {transcript && (
+              <div className="mb-8 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                <h4 className="text-lg font-semibold mb-2">Recorded Transcript</h4>
+                <div className="bg-white dark:bg-gray-800 p-4 rounded border border-gray-200 dark:border-gray-600">
+                  {transcript}
+                </div>
+              </div>
+            )}
+
             <div className="border-t border-gray-100 dark:border-gray-700 pt-6">
-              <h4 className="text-lg font-semibold mb-4 dark:text-white">Recommended Actions</h4>
+              <h4 className="text-lg font-semibold mb-4">Recommended Actions</h4>
               <div className="space-y-3">
                 <p className="text-gray-600 dark:text-gray-300">
                   {results.isDeepfake ? (
@@ -479,14 +509,16 @@ const Detection = () => {
             </div>
 
             {results.isDeepfake && (
-              <motion.button
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={handleSourceIdentification}
-                className="flex items-center px-6 py-3 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-all mt-4"
-              >
-                Identify Source
-              </motion.button>
+              <div className="mt-6">
+                <motion.button
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={handleSourceIdentification}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-all"
+                >
+                  Identify Source
+                </motion.button>
+              </div>
             )}
           </motion.div>
         )}
@@ -519,7 +551,7 @@ const Detection = () => {
                       <FiGlobe className="w-12 h-12 text-blue-600 dark:text-blue-300" />
                     </div>
                   </motion.div>
-                  <h3 className="text-2xl font-semibold mb-2 dark:text-white">Identifying Source</h3>
+                  <h3 className="text-2xl font-semibold mb-2 dark:text:white">Identifying Source</h3>
                   <p className="text-gray-500 dark:text-gray-400">Tracing origin of synthetic voice...</p>
                 </div>
               ) : sourceDetails ? (
@@ -530,39 +562,39 @@ const Detection = () => {
                   <div className="absolute top-4 right-4">
                     <button 
                       onClick={closeSourceIdentification}
-                      className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-white"
+                      className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text:white"
                     >
                       ✕
                     </button>
                   </div>
-                  <h3 className="text-2xl font-bold mb-6 dark:text-white">Source Identification</h3>
+                  <h3 className="text-2xl font-bold mb-6 dark:text:white">Source Identification</h3>
                   <div className="space-y-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl p-6">
                     <div className="flex items-center space-x-4">
                       <FiUser className="w-6 h-6 text-blue-600 dark:text-blue-300" />
                       <div>
                         <p className="text-sm text-gray-500 dark:text-gray-300">Name</p>
-                        <p className="font-semibold dark:text-white">{sourceDetails.name}</p>
+                        <p className="font-semibold dark:text:white">{sourceDetails.name}</p>
                       </div>
                     </div>
                     <div className="flex items-center space-x-4">
                       <FiGlobe className="w-6 h-6 text-green-600 dark:text-green-300" />
                       <div>
                         <p className="text-sm text-gray-500 dark:text-gray-300">IP Address</p>
-                        <p className="font-semibold dark:text-white">{sourceDetails.ipAddress}</p>
+                        <p className="font-semibold dark:text:white">{sourceDetails.ipAddress}</p>
                       </div>
                     </div>
                     <div className="flex items-center space-x-4">
                       <FiSmartphone className="w-6 h-6 text-purple-600 dark:text-purple-300" />
                       <div>
                         <p className="text-sm text-gray-500 dark:text-gray-300">Phone Number</p>
-                        <p className="font-semibold dark:text-white">{sourceDetails.phoneNumber}</p>
+                        <p className="font-semibold dark:text:white">{sourceDetails.phoneNumber}</p>
                       </div>
                     </div>
                     <div className="flex items-center space-x-4">
                       <FiMapPin className="w-6 h-6 text-red-600 dark:text-red-300" />
                       <div>
                         <p className="text-sm text-gray-500 dark:text-gray-300">Location</p>
-                        <p className="font-semibold dark:text-white">{sourceDetails.location}</p>
+                        <p className="font-semibold dark:text:white">{sourceDetails.location}</p>
                       </div>
                     </div>
                     <div className="text-xs text-gray-400 dark:text-gray-500 text-right mt-2">
