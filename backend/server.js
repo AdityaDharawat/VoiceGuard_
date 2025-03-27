@@ -2,8 +2,9 @@ import express from "express";
 import mongoose from "mongoose";
 import cors from "cors";
 import dotenv from "dotenv";
-import authRoutes from "./routes/authRoutes.js";
-import audioRoutes from "./routes/audioRoutes.js";
+import { router as authRoutes } from "./routes/authRoutes.js";
+import { router as audioRoutes } from "./routes/audioRoutes.js";
+
 
 dotenv.config();
 const app = express();

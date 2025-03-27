@@ -2,7 +2,7 @@ import express from "express";
 import mongoose from "mongoose";
 import multer from "multer";
 import { GridFSBucket } from "mongodb";
-import { authenticate } from "./authRoutes.js";
+import { authenticate } from "../routes/authRoutes.js";
 
 const router = express.Router();
 
@@ -65,4 +65,5 @@ router.get("/file/:filename", authenticate, async (req, res) => {
   }
 });
 
-module.exports = router;
+// Export the Router
+export { router };
