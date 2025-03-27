@@ -71,7 +71,7 @@ def process_video(youtube_url, model, scaler):
 # Main execution function
 if __name__ == "__main__":
     # Load your trained model
-    model = load_model('audio_model.h5')
+    model = load_model('news verification/vansh/audio_model.h5')
 
     # Assuming scaler is saved during training, you can load the scaler here if saved
     # scaler = joblib.load('scaler.pkl')  # Example if you saved the scaler
