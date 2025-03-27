@@ -1,7 +1,6 @@
-// pages/Detection.tsx
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiUpload, FiMic, FiDownload, FiRefreshCw } from 'react-icons/fi';
+import { FiUpload, FiMic, FiDownload, FiRefreshCw, FiMail, FiShare2, FiActivity } from 'react-icons/fi';
 
 interface AnalysisFeature {
   name: string;
@@ -38,30 +37,22 @@ const Detection = () => {
 
   const analyzeFile = async (file: File) => {
     setIsAnalyzing(true);
-    // Use the file for actual analysis
-    const formData = new FormData();
-    formData.append("file", file);
-
-    console.log('Analyzing file:', file.name, file.type, file.size);
     
-    // Simulate analysis
     try {
-    const response = await fetch("http://localhost:5000/analyze-audio", {
-      method: "POST",
-      body: formData,
-    });
+      // Simulate API call
+      const formData = new FormData();
+      formData.append("file", file);
+      
+      // In a real implementation, you would use:
+      // const response = await fetch("http://localhost:5000/analyze-audio", {
+      //   method: "POST",
+      //   body: formData,
+      // });
+      // const data = await response.json();
 
-    const data: AnalysisResults = await response.json();
-    setResults(data);
-  } catch (error) {
-    console.error("Error analyzing file:", error);
-  } finally {
-    setIsAnalyzing(false);
-  }
-
-    setTimeout(() => {
-      setIsAnalyzing(false);
-      setResults({
+      // Simulated response
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      const data: AnalysisResults = {
         isDeepfake: Math.random() > 0.7,
         confidence: Math.floor(Math.random() * 20) + 80,
         features: [
@@ -70,50 +61,35 @@ const Detection = () => {
           { name: "Vocal Biomarkers", value: Math.floor(Math.random() * 20) + 80 },
           { name: "Synthetic Artifacts", value: Math.floor(Math.random() * 20) + 80 }
         ]
-      });
-    }, 3000);
+      };
+
+      setResults(data);
+    } catch (error) {
+      console.error("Error analyzing file:", error);
+    } finally {
+      setIsAnalyzing(false);
+    }
   };
 
   const startRecording = async () => {
     setIsRecording(true);
-    // Simulate recording
-    // setTimeout(() => {
-    //   setIsRecording(false);
-    //   const mockFile = new File([""], "recording.wav", { type: "audio/wav" });
-    //   setFile(mockFile);
-    //   analyzeFile(mockFile);
-    // }, 2000);
+    
     try {
-    const response = await fetch("http://localhost:5000/record-audio", {
-      method: "POST",
-    });
-
-    if (!response.ok) throw new Error("Failed to start recording");
-
-    // Simulate recording delay
-    setTimeout(async () => {
-      try {
-        const stopResponse = await fetch("http://localhost:5000/stop-recording", {
-          method: "POST",
-        });
-
-        if (!stopResponse.ok) throw new Error("Failed to stop recording");
-
-        const audioBlob = await stopResponse.blob();
-        const audioFile = new File([audioBlob], "recording.wav", { type: "audio/wav" });
-
-        setFile(audioFile);
-        analyzeFile(audioFile);
-      } catch (error) {
-        console.error("Error stopping recording:", error);
-      } finally {
-        setIsRecording(false);
-      }
-    }, 5000); // Simulated recording duration (5 sec)
-  } catch (error) {
-    console.error("Error starting recording:", error);
-    setIsRecording(false);
-  }
+      // Simulate recording API call
+      // In a real implementation:
+      // const response = await fetch("http://localhost:5000/record-audio", { method: "POST" });
+      
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Simulated recording result
+      const mockFile = new File([""], "recording.wav", { type: "audio/wav" });
+      setFile(mockFile);
+      await analyzeFile(mockFile);
+    } catch (error) {
+      console.error("Error during recording:", error);
+    } finally {
+      setIsRecording(false);
+    }
   };
 
   const resetAnalysis = () => {
@@ -122,56 +98,38 @@ const Detection = () => {
   };
 
   const downloadReport = async () => {
-  if (!results) return;
-
-  try {
-    const response = await fetch("http://localhost:5000/download-report", {
-      method: "GET",
-    });
-
-    if (!response.ok) throw new Error("Failed to download report");
-
-    const blob = await response.blob();
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "analysis_report.pdf";
-    document.body.appendChild(a);
-    a.click();
-    window.URL.revokeObjectURL(url);
-    document.body.removeChild(a);
+    if (!results) return;
+    
+    try {
+      // Simulate report generation
+      await new Promise(resolve => setTimeout(resolve, 500));
+      alert("Report downloaded successfully (simulated)");
     } catch (error) {
-    console.error("Error downloading report:", error);
-      }
+      console.error("Error downloading report:", error);
+    }
   };
 
   const shareReport = async (method: "email" | "whatsapp") => {
-  if (!results) return;
+    if (!results) return;
 
-  const recipient = prompt(`Enter recipient ${method === "email" ? "email" : "WhatsApp number"}:`); 
-  if (!recipient) return;
+    const recipient = prompt(`Enter recipient ${method === "email" ? "email" : "WhatsApp number"}:`);
+    if (!recipient) return;
 
-  try {
-    const response = await fetch(`http://localhost:5000/share-report`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ method, recipient }),
-    });
-
-    const data = await response.json();
-    alert(data.message);
-  } catch (error) {
-    console.error("Error sharing report:", error);
-  }
-};
+    try {
+      // Simulate sharing
+      await new Promise(resolve => setTimeout(resolve, 500));
+      alert(`Report shared via ${method} to ${recipient} (simulated)`);
+    } catch (error) {
+      console.error(`Error sharing via ${method}:`, error);
+    }
+  };
 
   return (
     <div className="container mx-auto px-4 pt-28 py-12">
       <motion.h1 
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.4 }}
         className="text-3xl md:text-4xl font-bold mb-8 dark:text-white"
       >
         Voice Authenticity Analysis
@@ -181,9 +139,10 @@ const Detection = () => {
         {!file && !results && (
           <motion.div
             key="upload"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.3 }}
             className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 md:p-12 mb-8 border border-gray-100 dark:border-gray-700"
           >
             <div 
@@ -195,7 +154,7 @@ const Detection = () => {
               <FiUpload className="mx-auto w-12 h-12 text-gray-400 mb-4" />
               <h3 className="text-xl font-semibold mb-2 dark:text-white">Upload Voice Sample</h3>
               <p className="text-gray-500 dark:text-gray-400 mb-4">Drag & drop an audio file here, or click to browse</p>
-              <button className="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm font-medium">
+              <button className="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
                 Select File
               </button>
               <input 
@@ -238,21 +197,23 @@ const Detection = () => {
         {isAnalyzing && (
           <motion.div
             key="analyzing"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -20 }}
+            transition={{ duration: 0.4 }}
             className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 md:p-12 mb-8 border border-gray-100 dark:border-gray-700 text-center"
           >
             <div className="mb-6">
-              <div className="relative w-24 h-24 mx-auto mb-4">
-                <div className="absolute inset-0 rounded-full bg-blue-100 dark:bg-blue-900 animate-ping opacity-75"></div>
+              <motion.div
+                animate={{ rotate: 360 }}
+                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                className="relative w-24 h-24 mx-auto mb-4"
+              >
+                <div className="absolute inset-0 rounded-full bg-blue-100 dark:bg-blue-900 opacity-75"></div>
                 <div className="absolute inset-2 rounded-full bg-blue-200 dark:bg-blue-800 flex items-center justify-center">
-                  <svg className="w-12 h-12 text-blue-600 dark:text-blue-300 animate-spin" fill="none" viewBox="0 0 24 24">
-                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                  </svg>
+                  <FiActivity className="w-12 h-12 text-blue-600 dark:text-blue-300" />
                 </div>
-              </div>
+              </motion.div>
               <h3 className="text-2xl font-semibold mb-2 dark:text-white">Analyzing Voice Sample</h3>
               <p className="text-gray-500 dark:text-gray-400">Our AI is examining spectral patterns and vocal biomarkers...</p>
             </div>
@@ -262,7 +223,7 @@ const Detection = () => {
                 className="bg-blue-600 h-2.5 rounded-full" 
                 initial={{ width: 0 }}
                 animate={{ width: "100%" }}
-                transition={{ duration: 3 }}
+                transition={{ duration: 3, ease: "easeInOut" }}
               />
             </div>
           </motion.div>
@@ -273,6 +234,7 @@ const Detection = () => {
             key="results"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4 }}
             className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 md:p-12 mb-8 border border-gray-100 dark:border-gray-700"
           >
             <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8">
@@ -280,15 +242,22 @@ const Detection = () => {
                 <h3 className="text-2xl font-semibold dark:text-white">Analysis Results</h3>
                 <p className="text-gray-500 dark:text-gray-400">Detailed authenticity assessment</p>
               </div>
-              <button 
+              <motion.button
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
                 onClick={resetAnalysis}
                 className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm font-medium mt-4 md:mt-0 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
               >
                 <FiRefreshCw className="mr-2" /> Analyze Another
-              </button>
+              </motion.button>
             </div>
 
-            <div className={`p-6 rounded-xl mb-8 ${results.isDeepfake ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'} border`}>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.2 }}
+              className={`p-6 rounded-xl mb-8 ${results.isDeepfake ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'} border`}
+            >
               <div className="flex items-center justify-between">
                 <div>
                   <h4 className="text-lg font-semibold dark:text-white">
@@ -302,22 +271,30 @@ const Detection = () => {
                   {results.isDeepfake ? 'High Risk' : 'Low Risk'}
                 </div>
               </div>
-            </div>
+            </motion.div>
 
             <div className="grid md:grid-cols-2 gap-6 mb-8">
               {results.features.map((feature, index) => (
-                <div key={index} className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                <motion.div
+                  key={index}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: index * 0.1 }}
+                  className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4"
+                >
                   <div className="flex justify-between items-center mb-2">
                     <span className="text-sm font-medium dark:text-gray-300">{feature.name}</span>
                     <span className="text-sm font-semibold dark:text-white">{feature.value}%</span>
                   </div>
                   <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
-                    <div 
+                    <motion.div 
                       className={`h-2 rounded-full ${feature.value > 85 ? 'bg-green-500' : feature.value > 70 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                      style={{ width: `${feature.value}%` }}
-                    ></div>
+                      initial={{ width: 0 }}
+                      animate={{ width: `${feature.value}%` }}
+                      transition={{ duration: 0.8, delay: index * 0.1 + 0.3 }}
+                    />
                   </div>
-                </div>
+                </motion.div>
               ))}
             </div>
 
@@ -339,28 +316,34 @@ const Detection = () => {
                 </p>
               </div>
             </div>
-            
-            {/* Download and Share Buttons */}
+
             <div className="mt-8 flex flex-wrap gap-4">
-              <button 
-              onClick={downloadReport}
-              className="flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors">
+              <motion.button
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={downloadReport}
+                className="flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all"
+              >
                 <FiDownload className="mr-2" /> Download Full Report
-              </button>
+              </motion.button>
 
-              {/* Share via Email */}
-            <button 
-              onClick={() => shareReport("email")}
-              className="flex items-center px-6 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg font-medium transition-colors">
-              Share via Email
-            </button>
+              <motion.button
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={() => shareReport("email")}
+                className="flex items-center px-6 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg font-medium transition-all"
+              >
+                <FiMail className="mr-2" /> Share via Email
+              </motion.button>
 
-             {/* Share via WhatsApp */}
-            <button 
-              onClick={() => shareReport("whatsapp")}
-              className="flex items-center px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-colors">
-              📱 Share via WhatsApp
-            </button>
+              <motion.button
+                whileHover={{ scale: 1.03 }}
+                whileTap={{ scale: 0.97 }}
+                onClick={() => shareReport("whatsapp")}
+                className="flex items-center px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-all"
+              >
+                <FiShare2 className="mr-2" /> Share via WhatsApp
+              </motion.button>
             </div>
           </motion.div>
         )}
