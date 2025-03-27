@@ -1,9 +1,10 @@
-const express = require("express");
-const mongoose = require("mongoose");
-const cors = require("cors");
-const dotenv = require("dotenv");
-const { router: authRoutes } = require("./routes/authRoutes");
-const audioRoutes = require("./routes/audioRoutes");
+import express from "express";
+import mongoose from "mongoose";
+import cors from "cors";
+import dotenv from "dotenv";
+import { router as authRoutes } from "./routes/authRoutes.js";
+import { router as audioRoutes } from "./routes/audioRoutes.js";
+
 
 dotenv.config();
 const app = express();
@@ -13,7 +14,7 @@ app.use(express.json());
 // Enable CORS for React (Port 5173)
 const corsOptions = {
   origin: "http://localhost:5173",
-  credentials: true, // Allow credentials if needed
+  credentials: true,
 };
 app.use(cors(corsOptions));
 
@@ -22,13 +23,12 @@ mongoose.connect(process.env.MONGO_URI, {
   useNewUrlParser: true,
   useUnifiedTopology: true,
 }).then(() => console.log("MongoDB Connected"))
-  .catch(err => console.log(err));
+  .catch(err => console.error("MongoDB Connection Error:", err));
 
 // Routes
 app.use("/auth", authRoutes);
 app.use("/audio", audioRoutes);
 
-// Change port to 4000 (Optional if Flask is on 5000)
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
   console.log(`Node.js server running on port ${PORT}`);
