@@ -1,50 +1,131 @@
-#sample flask app structure to integrate with tsx frontend
-#run this file using python app.py
-#open browser and go to http://localhost:5000/api/data to see the response
-#open browser and go to http://localhost:5000/api/feedback to see the response
-
 from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
+from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
+from dotenv import load_dotenv
+from werkzeug.security import generate_password_hash, check_password_hash
+from werkzeug.utils import secure_filename
+from pymongo import MongoClient
+from gridfs import GridFS
+from bson import ObjectId
 import os
-import json
-import dotenv
+import io
+import datetime
 import smtplib
 from email.message import EmailMessage
-from pymongo import MongoClient
-# from deepfake_detector import analyze_audio  # Your deepfake detection logic
-# from audio_recorder import record_audio  # Function to record audio
+
+# Load environment variables
+load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
 
 # ✅ Connect to MongoDB (Local or Atlas)
-client = MongoClient("mongodb://localhost:27017/VoiceGuard")  # Change to Atlas URL if needed
-db = client["VoiceGuard"]  # Database name
-collection = db["Feedback"]  # Collection name
+MONGODB_URI = os.getenv('MONGODB_URI')
+MONGODB_DB_NAME = os.getenv('MONGODB_DB_NAME')
+MONGODB_AUDIO_COLLECTION_NAME = os.getenv('MONGODB_AUDIO_COLLECTION_NAME')
 
-UPLOAD_FOLDER = "uploads"
-REPORTS_FOLDER = "reports"
+# Establish MongoDB connection
+client = MongoClient(MONGODB_URI)
+db = client[MONGODB_DB_NAME]
+fs = GridFS(db, collection=MONGODB_AUDIO_COLLECTION_NAME)
 
-REPORTS_FOLDER = "reports"  #downloaded reports will be stored here
-REPORT_FILE = os.path.join(REPORTS_FOLDER, "live_recording.json")
+#for audio files
+ALLOWED_EXTENSIONS = {
+    'mp3', 'wav', 'webm', 'ogg', 'aac', 'flac', 'm4a'
+}
 
-os.makedirs(UPLOAD_FOLDER, exist_ok=True)
-os.makedirs(REPORTS_FOLDER, exist_ok=True)
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-@app.route('/api/data', methods=['GET'])   ##set up this as path for get req http://127.0.0.1:5000/api/data
+class AudioFile:
+    @staticmethod
+    def create(file, user_id):
+        """Create and save an audio file entry"""
+        audio_data = {
+            'filename': file.filename,
+            'contentType': file.content_type,
+            'uploadDate': datetime.datetime.utcnow(),
+            'userId': ObjectId(user_id),
+            'confidence': None,
+            'result': None
+        }
+        return db.audio_files.insert_one(audio_data)
+
+class UserAuth:
+    @staticmethod
+    def register(email, password):
+        """Register a new user"""
+        # Check if user already exists
+        existing_user = db.users.find_one({'email': email})
+        if existing_user:
+            return None
+
+        # Hash password
+        hashed_password = generate_password_hash(password)
+        
+        # Create user document
+        user_data = {
+            'email': email,
+            'password': hashed_password,
+            'created_at': datetime.datetime.utcnow()
+        }
+        
+        # Insert user
+        result = db.users.insert_one(user_data)
+        return result.inserted_id
+
+    @staticmethod
+    def login(email, password):
+        """Authenticate user and generate JWT"""
+        user = db.users.find_one({'email': email})
+        if user and check_password_hash(user['password'], password):
+            # Create access token
+            access_token = create_access_token(identity=str(user['_id']))
+            return access_token
+        return None
+
+@app.route('/api/data', methods=['GET'])
 def get_data():
     return jsonify({"message": "Hello from Flask!"})
 
-@app.route('/api/feedback', methods=['POST'])  #set up this as path for post req http://127.0.0.1:5000/api/feedback
-# def receive_feedback():
-#     data = request.json
-#     feedback_type = data.get('feedbackType')
-#     message = data.get('message')
-#     rating = data.get('rating')
+@app.route('/api/auth/register', methods=['POST'])
+def register():
+    data = request.json
+    email = data.get('email')
+    password = data.get('password')
 
-#     print(f"Received feedback: Type={feedback_type}, Message={message}, Rating={rating}")
+    if not email or not password:
+        return jsonify({'error': 'Email and password are required'}), 400
 
-#     return jsonify({"message": "Feedback received successfully"}), 200
+    user_id = UserAuth.register(email, password)
+    
+    if user_id:
+        return jsonify({
+            'message': 'User registered successfully',
+            'user_id': str(user_id)
+        }), 201
+    else:
+        return jsonify({'error': 'User already exists'}), 409
+
+@app.route('/api/auth/login', methods=['POST'])
+def login():
+    data = request.json
+    email = data.get('email')
+    password = data.get('password')
+
+    access_token = UserAuth.login(email, password)
+    
+    if access_token:
+        return jsonify({
+            'access_token': access_token,
+            'message': 'Login successful'
+        }), 200
+    else:
+        return jsonify({'error': 'Invalid credentials'}), 401
+
+
+@app.route('/api/feedback', methods=['POST'])
 def receive_feedback():
     try:
         data = request.json
@@ -61,60 +142,70 @@ def receive_feedback():
             "message": message,
             "rating": rating
         }
-        result = collection.insert_one(feedback_data)  # Insert into MongoDB
+        result = db.Feedback.insert_one(feedback_data)  # Insert into MongoDB
 
         return jsonify({"message": "Feedback saved successfully", "id": str(result.inserted_id)}), 201
 
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-# 1. Endpoint to analyze an uploaded audio file
-@app.route('/analyze-audio', methods=['POST'])
-def analyze_audio_file():
-    if 'file' not in request.files:
-        return jsonify({"error": "No file uploaded"}), 400
+# Audio Upload and Analysis Routes
+@app.route('/api/audio/upload', methods=['POST'])
+@jwt_required()
+def upload_audio():
+    # Authenticate user
+    user_id = get_jwt_identity()
 
-    file = request.files['file']
-    filepath = os.path.join(UPLOAD_FOLDER, file.filename)
-    file.save(filepath)
+    # Check if file is present
+    if 'audio' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+    
+    file = request.files['audio']
+    
+    # Validate filename
+    if file.filename == '':
+        return jsonify({'error': 'No selected file'}), 400
+    
+    # Check file type
+    if not allowed_file(file.filename):
+        return jsonify({'error': 'Invalid file type'}), 400
 
-    # results = analyze_audio(filepath)  # Your deepfake detection function
-
-    # Save results as a report
-    # report_path = os.path.join(REPORTS_FOLDER, f"{file.filename}.json")
-    # with open(report_path, "w") as f:
-    #     f.write(json.dumps(results))
-
-    # return jsonify(results)
-
-# 2. Endpoint to record and analyze live audio
-# @app.route('/record-audio', methods=['POST'])
-# def record_audio_file():
-    # audio_path = record_audio()  # Your function to capture audio from the microphone
-
-    # results = analyze_audio(audio_path)
-    # report_path = os.path.join(REPORTS_FOLDER, "live_recording.json")
-    # with open(report_path, "w") as f:
-    #     f.write(json.dumps(results))
-
-    # return jsonify(results)
+    try:
+        # Store file in GridFS
+        file_id = fs.put(
+            file.read(), 
+            filename=secure_filename(file.filename),
+            content_type=file.content_type,
+            user_id=user_id
+        )
+        
+        # Create audio file record
+        AudioFile.create(file, user_id)
+        
+        return jsonify({
+            'message': 'File uploaded successfully',
+            'file_id': str(file_id)
+        }), 200
+    
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 # 3. Endpoint to download analysis reports
-@app.route('/download-report', methods=['GET'])
-def download_report():
-    filename = request.args.get("filename")
+# @app.route('/download-report', methods=['GET'])
+# def download_report():
+#     filename = request.args.get("filename")
     
-    if not filename:
-        return jsonify({"error": "Filename is required"}), 400
+#     if not filename:
+#         return jsonify({"error": "Filename is required"}), 400
 
-    # Prevent directory traversal attacks
-    safe_filename = os.path.basename(filename)
-    report_path = os.path.join(REPORTS_FOLDER, safe_filename)
+#     # Prevent directory traversal attacks
+#     safe_filename = os.path.basename(filename)
+#     report_path = os.path.join(REPORTS_FOLDER, safe_filename)
 
-    if not os.path.exists(report_path):
-        return jsonify({"error": "Report not found"}), 404
+#     if not os.path.exists(report_path):
+#         return jsonify({"error": "Report not found"}), 404
 
-    return send_file(report_path, as_attachment=True, download_name=safe_filename)
+#     return send_file(report_path, as_attachment=True, download_name=safe_filename)
 
 @app.route("/share-report", methods=["POST"])
 def share_report():
@@ -155,6 +246,87 @@ def share_report():
         return jsonify({"message": "WhatsApp link generated", "link": whatsapp_link})
 
     return jsonify({"error": "Invalid method"}), 400
+
+@app.route('/api/audio/recent-scans', methods=['GET'])
+@jwt_required()
+def get_recent_scans():
+    user_id = get_jwt_identity()
+    
+    # Fetch recent audio files for the user
+    recent_scans = list(db.audio_files.find({
+        'userId': ObjectId(user_id)
+    }).sort('uploadDate', -1).limit(10))
+    
+    # Transform scans for frontend
+    processed_scans = []
+    for scan in recent_scans:
+        processed_scans.append({
+            '_id': str(scan['_id']),
+            'filename': scan['filename'],
+            'uploadDate': scan['uploadDate'].isoformat(),
+            'result': scan.get('result'),
+            'confidence': scan.get('confidence')
+        })
+    
+    return jsonify(processed_scans), 200
+
+def generate_audio_url(scan):
+    """
+    Generate a secure URL for accessing the audio file
+    
+    Args:
+        scan (dict): MongoDB document for an audio scan
+    
+    Returns:
+        str: Secure URL for accessing the audio file
+    """
+    try:
+        # Use GridFS file_id to retrieve the file
+        file_id = scan.get('file_id')
+        
+        if not file_id:
+            return None
+        
+        # Return a URL that can be used to fetch the specific audio file
+        return f'/api/audio/file/{file_id}'
+    
+    except Exception as e:
+        app.logger.error(f"Error generating audio URL: {str(e)}")
+        return None
+
+@app.route('/api/audio/file/<file_id>', methods=['GET'])
+@jwt_required()
+def serve_audio_file(file_id):
+    try:
+        # Retrieve file from GridFS
+        file_obj = fs.get(ObjectId(file_id))
+        
+        # Create in-memory bytes buffer
+        file_buffer = io.BytesIO(file_obj.read())
+        file_buffer.seek(0)
+        
+        return send_file(
+            file_buffer, 
+            mimetype=file_obj.content_type,
+            as_attachment=False,
+            download_name=file_obj.filename
+        )
+    
+    except Exception as e:
+        return jsonify({'error': 'Unable to serve audio file'}), 500
+    
+# Error Handlers
+@app.errorhandler(400)
+def bad_request(error):
+    return jsonify({'error': 'Bad request'}), 400
+
+@app.errorhandler(401)
+def unauthorized(error):
+    return jsonify({'error': 'Unauthorized access'}), 401
+
+@app.errorhandler(500)
+def server_error(error):
+    return jsonify({'error': 'Internal server error'}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)

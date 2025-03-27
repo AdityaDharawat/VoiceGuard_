@@ -1,6 +1,7 @@
 import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { FiUpload, FiMic, FiDownload, FiRefreshCw, FiMail, FiShare2, FiActivity, FiUser, FiMapPin, FiSmartphone, FiGlobe } from 'react-icons/fi';
+import axios from 'axios';
 
 interface AnalysisFeature {
   name: string;
@@ -30,11 +31,109 @@ const Detection = () => {
   const [sourceDetails, setSourceDetails] = useState<SourceDetails | null>(null);
   const [isIdentifying, setIsIdentifying] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setFile(e.target.files[0]);
-      analyzeFile(e.target.files[0]);
+      // setFile(e.target.files[0]);
+      // analyzeFile(e.target.files[0]);
+      const selectedFile = e.target.files[0];
+
+      // Define allowed audio MIME types
+      const allowedAudioTypes = [
+        'audio/mpeg',     // MP3
+        'audio/wav',      // WAV
+        'audio/webm',     // WebM
+        'audio/ogg',      // OGG
+        'audio/aac',      // AAC
+        'audio/flac',     // FLAC
+        'audio/x-m4a',    // M4A
+        'audio/x-wav'     // Alternative WAV MIME
+      ];
+
+      if (!allowedAudioTypes.includes(selectedFile.type)) {
+        alert('Please upload a valid audio file (MP3, WAV, WebM, OGG, AAC, FLAC, M4A).');
+        return;
+      }
+
+      setFile(selectedFile);
+      await uploadAudioFile(selectedFile);
+    }
+  };
+
+  const uploadAudioFile = async (audioFile: File) => {
+    setIsAnalyzing(true);
+    
+    try {
+      const formData = new FormData();
+      formData.append('audio', audioFile);
+
+      const response = await axios.post('/api/audio/upload', formData, {
+        headers: {
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+
+      // Simulate analysis based on backend response
+      const data: AnalysisResults = {
+        isDeepfake: response.data.isDeepfake,
+        confidence: response.data.confidence,
+        features: [
+          { name: "Spectral Consistency", value: Math.floor(Math.random() * 20) + 80 },
+          { name: "Micro-timing Analysis", value: Math.floor(Math.random() * 20) + 80 },
+          { name: "Vocal Biomarkers", value: Math.floor(Math.random() * 20) + 80 },
+          { name: "Synthetic Artifacts", value: Math.floor(Math.random() * 20) + 80 }
+        ]
+      };
+
+      setResults(data);
+    } catch (error) {
+      console.error("Error uploading file:", error);
+      alert('Failed to upload audio file. Please try again.');
+    } finally {
+      setIsAnalyzing(false);
+    }
+  };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      mediaRecorderRef.current.ondataavailable = (event) => {
+        audioChunksRef.current.push(event.data);
+      };
+
+      mediaRecorderRef.current.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const audioFile = new File([audioBlob], 'recording.webm', { type: 'audio/webm' });
+        
+        setFile(audioFile);
+        await uploadAudioFile(audioFile);
+      };
+
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+    } catch (error) {
+      console.error('Error accessing microphone:', error);
+      alert('Failed to access microphone. Please check permissions.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const handleToggleRecording = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
     }
   };
 
@@ -82,16 +181,16 @@ const Detection = () => {
     }
   };
 
-  const toggleRecording = async () => {
-    if (isRecording) {
-      setIsRecording(false);
-      const mockFile = new File([""], "recording.wav", { type: "audio/wav" });
-      setFile(mockFile);
-      await analyzeFile(mockFile);
-    } else {
-      setIsRecording(true);
-    }
-  };
+  // const toggleRecording = async () => {
+  //   if (isRecording) {
+  //     setIsRecording(false);
+  //     const mockFile = new File([""], "recording.wav", { type: "audio/wav" });
+  //     setFile(mockFile);
+  //     await analyzeFile(mockFile);
+  //   } else {
+  //     setIsRecording(true);
+  //   }
+  // };
 
   const resetAnalysis = () => {
     setFile(null);
@@ -205,7 +304,7 @@ const Detection = () => {
               <motion.button
                 whileTap={{ scale: 0.95 }}
                 className={`relative w-24 h-24 rounded-full flex items-center justify-center mx-auto shadow-lg ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-blue-600 hover:bg-blue-700'} transition-all duration-300 text-white`}
-                onClick={toggleRecording}
+                onClick={handleToggleRecording}
               >
                 <FiMic className="w-8 h-8" />
                 {isRecording && (
