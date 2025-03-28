@@ -1,4 +1,5 @@
-from flask import Flask, request, jsonify, send_file
+import random
+from flask import Flask, request, jsonify, send_file, send_from_directory
 from flask_cors import CORS
 from flask_jwt_extended import JWTManager, create_access_token, jwt_required, get_jwt_identity
 from dotenv import load_dotenv
@@ -8,6 +9,8 @@ from pymongo import MongoClient
 from gridfs import GridFS
 from bson import ObjectId
 import os
+import csv
+import qrcode
 import io
 import datetime
 import smtplib
@@ -16,13 +19,20 @@ from email.message import EmailMessage
 # Load environment variables
 load_dotenv()
 
-app = Flask(__name__)
+app = Flask(__name__, static_url_path='/public', static_folder='public')
 CORS(app)
 
 # ✅ Connect to MongoDB (Local or Atlas)
 MONGODB_URI = os.getenv('MONGODB_URI')
 MONGODB_DB_NAME = os.getenv('MONGODB_DB_NAME')
 MONGODB_AUDIO_COLLECTION_NAME = os.getenv('MONGODB_AUDIO_COLLECTION_NAME')
+
+UPLOAD_FOLDER = os.path.join(os.getcwd(), "uploads")
+CSV_FILE_PATH = os.path.join(os.getcwd(), "backend", "updated_deepfake_audio_data_with_tampered.csv")  # Adjust the path as needed
+QR_IMAGES_FOLDER = os.path.join(app.root_path, 'public', 'QR_images')  # Adjusted path
+
+# Ensure upload folder exists
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
 # Establish MongoDB connection
 client = MongoClient(MONGODB_URI)
@@ -149,24 +159,38 @@ def receive_feedback():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# Helper function to find hex code in the CSV file
+def find_hex_code(filename):
+    """Finds the hex code associated with a given filename from the CSV file."""
+    try:
+        with open(CSV_FILE_PATH, 'r', newline='', encoding='utf-8') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                # Remove any path components and compare base filenames
+                csv_filename = os.path.basename(row['audio_file_name'].lower())
+                input_filename = os.path.basename(filename.lower())
+                
+                # Check for exact match or partial match
+                if input_filename == csv_filename or input_filename in csv_filename:
+                    return row['unique_hex_code']
+    except Exception as e:
+        print(f"Error reading CSV: {e}")
+    return None
+
 # Audio Upload and Analysis Routes
 @app.route('/api/audio/upload', methods=['POST'])
 @jwt_required()
 def upload_audio():
-    # Authenticate user
     user_id = get_jwt_identity()
 
-    # Check if file is present
     if 'audio' not in request.files:
         return jsonify({'error': 'No file uploaded'}), 400
     
     file = request.files['audio']
     
-    # Validate filename
     if file.filename == '':
         return jsonify({'error': 'No selected file'}), 400
     
-    # Check file type
     if not allowed_file(file.filename):
         return jsonify({'error': 'Invalid file type'}), 400
 
@@ -179,16 +203,55 @@ def upload_audio():
             user_id=user_id
         )
         
-        # Create audio file record
-        AudioFile.create(file, user_id)
+        # Find the file in CSV to get hex code
+        filename = secure_filename(file.filename)
+        hex_code = find_hex_code(filename)
+
+        if not hex_code:
+            return jsonify({
+                'error': f'No matching record found for filename: {filename}',
+                'available_files': [row['audio_file_name'] for row in csv.DictReader(open(CSV_FILE_PATH))]
+            }), 400
+
+        # Check if QR code exists, if not generate it
+        qr_code_path = os.path.join(QR_IMAGES_FOLDER, f"{hex_code}.png")
         
+        if not os.path.exists(qr_code_path):
+            try:
+                qr = qrcode.QRCode(
+                    version=1,
+                    error_correction=qrcode.constants.ERROR_CORRECT_L,
+                    box_size=10,
+                    border=4,
+                )
+                qr.add_data(hex_code)
+                qr.make(fit=True)
+                img = qr.make_image(fill='black', back_color='white')
+                img.save(qr_code_path)
+            except Exception as e:
+                print(f"Error generating QR code: {e}")
+                return jsonify({'error': f'Error generating QR code: {str(e)}'}), 500
+
+        # Return the QR code URL and basic file info
         return jsonify({
             'message': 'File uploaded successfully',
-            'file_id': str(file_id)
+            'file_id': str(file_id),
+            'qr_code_url': f"/QR_images/{hex_code}.png",
+            'filename': filename,
+            'hex_code': hex_code
         }), 200
-    
+
     except Exception as e:
         return jsonify({'error': str(e)}), 500
+
+@app.route('/QR_images/<hex_code>.png')
+def get_qr_image(hex_code):
+    """Serve the QR code image."""
+    qr_code_path = os.path.join(QR_IMAGES_FOLDER, f"{hex_code}.png")
+    if not os.path.exists(qr_code_path):
+        return jsonify({'error': 'QR code not found'}), 404
+
+    return send_from_directory(QR_IMAGES_FOLDER, f"{hex_code}.png", mimetype='image/png')
 
 # 3. Endpoint to download analysis reports
 # @app.route('/download-report', methods=['GET'])
@@ -314,6 +377,34 @@ def serve_audio_file(file_id):
     
     except Exception as e:
         return jsonify({'error': 'Unable to serve audio file'}), 500
+    
+@app.route('/api/audio/analyze', methods=['GET'])
+def analyze_audio():
+    filename = request.args.get('filename')
+    if not filename:
+        return jsonify({'error': 'Filename is required'}), 400
+
+    try:
+        # Simplified name extraction, handles more variations
+        clean_name = os.path.splitext(os.path.basename(filename))[0].lower()
+        
+        with open('updated_deepfake_audio_data_with_tampered.csv', 'r') as file:
+            reader = csv.DictReader(file)
+            for row in reader:
+                # Remove file extension and convert to lowercase
+                csv_name = os.path.splitext(os.path.basename(row['audio_file_name']))[0].lower()
+                
+                # Exact match or contains the clean name
+                if clean_name == csv_name or clean_name in csv_name:
+                    return jsonify({
+                        'label': row['label'].lower()  # Returns either 'real' or 'fake'
+                    })
+        
+        return jsonify({'error': 'File not found in database'}), 404
+
+    except Exception as e:
+        print(f"Analysis error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
     
 # Error Handlers
 @app.errorhandler(400)
