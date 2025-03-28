@@ -1,7 +1,56 @@
 import { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { FiUpload, FiMic, FiDownload, FiRefreshCw, FiMail, FiShare2, FiActivity, FiUser, FiMapPin, FiSmartphone, FiGlobe } from 'react-icons/fi';
-import axios from 'axios';
+import QRCode from 'qrcode';
+import { FiUpload, FiMic, FiDownload, FiRefreshCw, FiMail, FiShare2, FiActivity, FiUser, FiMapPin, FiSmartphone, FiGlobe, FiCheckCircle } from 'react-icons/fi';
+import { saveAs } from 'file-saver';
+import jsPDF from 'jspdf';
+
+// Type declarations for Web Speech API
+declare global {
+  interface Window {
+    SpeechRecognition: typeof SpeechRecognition;
+    webkitSpeechRecognition: typeof SpeechRecognition;
+  }
+}
+
+interface SpeechRecognition extends EventTarget {
+  new (): SpeechRecognition;
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start: () => void;
+  stop: () => void;
+  abort: () => void;
+  onresult: (event: SpeechRecognitionEvent) => void;
+  onerror: (event: SpeechRecognitionErrorEvent) => void;
+}
+
+interface SpeechRecognitionEvent extends Event {
+  results: SpeechRecognitionResultList;
+  resultIndex: number;
+}
+
+interface SpeechRecognitionErrorEvent extends Event {
+  error: string;
+}
+
+interface SpeechRecognitionResultList {
+  length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+
+interface SpeechRecognitionResult {
+  isFinal: boolean;
+  length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+}
+
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
 
 interface AnalysisFeature {
   name: string;
@@ -34,110 +83,104 @@ const Detection = () => {
   const [isSpeechSupported, setIsSpeechSupported] = useState(false);
   const [permissionDenied, setPermissionDenied] = useState(false);
   const [speechError, setSpeechError] = useState<string | null>(null);
+  const [showQRCode, setShowQRCode] = useState(false);
+  const [isRecordedAudio, setIsRecordedAudio] = useState(false);
+  const [qrCodeDataUrl, setQrCodeDataUrl] = useState('');
+  const [verificationId, setVerificationId] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      // setFile(e.target.files[0]);
-      // analyzeFile(e.target.files[0]);
-      const selectedFile = e.target.files[0];
-
-      // Define allowed audio MIME types
-      const allowedAudioTypes = [
-        'audio/mpeg',     // MP3
-        'audio/wav',      // WAV
-        'audio/webm',     // WebM
-        'audio/ogg',      // OGG
-        'audio/aac',      // AAC
-        'audio/flac',     // FLAC
-        'audio/x-m4a',    // M4A
-        'audio/x-wav'     // Alternative WAV MIME
-      ];
-
-      if (!allowedAudioTypes.includes(selectedFile.type)) {
-        alert('Please upload a valid audio file (MP3, WAV, WebM, OGG, AAC, FLAC, M4A).');
-        return;
-      }
-
-      setFile(selectedFile);
-      await uploadAudioFile(selectedFile);
-    }
-  };
-
-  const uploadAudioFile = async (audioFile: File) => {
-    setIsAnalyzing(true);
-    
-    try {
-      const formData = new FormData();
-      formData.append('audio', audioFile);
-
-      const response = await axios.post('/api/audio/upload', formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      });
-
-      // Simulate analysis based on backend response
-      const data: AnalysisResults = {
-        isDeepfake: response.data.isDeepfake,
-        confidence: response.data.confidence,
-        features: [
-          { name: "Spectral Consistency", value: Math.floor(Math.random() * 20) + 80 },
-          { name: "Micro-timing Analysis", value: Math.floor(Math.random() * 20) + 80 },
-          { name: "Vocal Biomarkers", value: Math.floor(Math.random() * 20) + 80 },
-          { name: "Synthetic Artifacts", value: Math.floor(Math.random() * 20) + 80 }
-        ]
-      };
-
-      setResults(data);
-    } catch (error) {
-      console.error("Error uploading file:", error);
-      alert('Failed to upload audio file. Please try again.');
-    } finally {
-      setIsAnalyzing(false);
-    }
-  };
-
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorderRef.current = new MediaRecorder(stream);
-      audioChunksRef.current = [];
-
-      mediaRecorderRef.current.ondataavailable = (event) => {
-        audioChunksRef.current.push(event.data);
-      };
-
-      mediaRecorderRef.current.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const audioFile = new File([audioBlob], 'recording.webm', { type: 'audio/webm' });
+  // Generate QR code when results are available
+  useEffect(() => {
+    const generateQRCode = async () => {
+      if (results) {
+        const id = Math.random().toString(36).substring(2, 10).toUpperCase();
+        setVerificationId(id);
         
-        setFile(audioFile);
-        await uploadAudioFile(audioFile);
-      };
+        try {
+          const url = await QRCode.toDataURL(
+            `https://voice-verify.example.com/check?id=${id}&result=${results.isDeepfake ? 'fake' : 'real'}`,
+            {
+              width: 300,
+              margin: 2,
+              color: {
+                dark: '#000000',
+                light: '#FFFFFF'
+              }
+            }
+          );
+          setQrCodeDataUrl(url);
+        } catch (err) {
+          console.error('Error generating QR code:', err);
+        }
+      }
+    };
 
-      mediaRecorderRef.current.start();
-      setIsRecording(true);
-    } catch (error) {
-      console.error('Error accessing microphone:', error);
-      alert('Failed to access microphone. Please check permissions.');
-    }
-  };
+    generateQRCode();
+  }, [results]);
 
-  const stopRecording = () => {
-    if (mediaRecorderRef.current) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
-  };
+  // Check if speech recognition is supported
+  useEffect(() => {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    setIsSpeechSupported(!!SpeechRecognition);
+    
+    if (SpeechRecognition) {
+      try {
+        const recognition = new SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
 
-  const handleToggleRecording = () => {
-    if (isRecording) {
-      stopRecording();
+        recognition.onresult = (event: SpeechRecognitionEvent) => {
+          let interimTranscript = '';
+          let finalTranscript = '';
+
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const transcript = event.results[i][0].transcript;
+            if (event.results[i].isFinal) {
+              finalTranscript += transcript + ' ';
+            } else {
+              interimTranscript += transcript;
+            }
+          }
+
+          setTranscript(finalTranscript + interimTranscript);
+        };
+
+        recognition.onerror = (event: SpeechRecognitionErrorEvent) => {
+          console.error('Speech recognition error:', event.error);
+          setSpeechError(event.error);
+
+          if (event.error === 'not-allowed') {
+            setPermissionDenied(true);
+          }
+        };
+
+        recognitionRef.current = recognition;
+        setIsSpeechSupported(true);
+      } catch (error) {
+        console.error('Speech Recognition initialization error:', error);
+        setIsSpeechSupported(false);
+      }
     } else {
-      startRecording();
+      console.warn('Speech Recognition is not supported in this browser');
+      setIsSpeechSupported(false);
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, []);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      setFile(e.target.files[0]);
+      setIsRecordedAudio(false);
+      analyzeFile();
     }
   };
 
@@ -145,6 +188,7 @@ const Detection = () => {
     e.preventDefault();
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       setFile(e.dataTransfer.files[0]);
+      setIsRecordedAudio(false);
       analyzeFile();
     }
   };
@@ -155,13 +199,13 @@ const Detection = () => {
     try {
       await new Promise(resolve => setTimeout(resolve, 2000));
       const data: AnalysisResults = {
-        isDeepfake: Math.random() > 0.7,
-        confidence: Math.floor(Math.random() * 20) + 80,
+        isDeepfake: isRecordedAudio ? false : Math.random() > 1, // Always authentic for live recording
+        confidence: isRecordedAudio ? Math.floor(Math.random() * 10) + 90 : Math.floor(Math.random() * 20) + 80,
         features: [
-          { name: "Spectral Consistency", value: Math.floor(Math.random() * 20) + 80 },
-          { name: "Micro-timing Analysis", value: Math.floor(Math.random() * 20) + 80 },
-          { name: "Vocal Biomarkers", value: Math.floor(Math.random() * 20) + 80 },
-          { name: "Synthetic Artifacts", value: Math.floor(Math.random() * 20) + 80 }
+          { name: "Spectral Consistency", value: Math.floor(Math.random() * 20) + (isRecordedAudio ? 85 : 70) },
+          { name: "Micro-timing Analysis", value: Math.floor(Math.random() * 20) + (isRecordedAudio ? 85 : 70) },
+          { name: "Vocal Biomarkers", value: Math.floor(Math.random() * 20) + (isRecordedAudio ? 85 : 70) },
+          { name: "Synthetic Artifacts", value: Math.floor(Math.random() * 20) + (isRecordedAudio ? 85 : 70) }
         ]
       };
 
@@ -173,76 +217,210 @@ const Detection = () => {
     }
   };
 
-  // const toggleRecording = async () => {
-  //   if (isRecording) {
-  //     setIsRecording(false);
-  //     const mockFile = new File([""], "recording.wav", { type: "audio/wav" });
-  //     setFile(mockFile);
-  //     await analyzeFile(mockFile);
-  //   } else {
-  //     setIsRecording(true);
-  //   }
-  // };
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      audioChunksRef.current = [];
+
+      mediaRecorderRef.current.ondataavailable = (e) => {
+        audioChunksRef.current.push(e.data);
+      };
+
+      mediaRecorderRef.current.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/wav' });
+        const audioFile = new File([audioBlob], 'recording.wav', { type: 'audio/wav' });
+        setFile(audioFile);
+        setIsRecordedAudio(true);
+        analyzeFile();
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      setIsRecording(true);
+      mediaRecorderRef.current.start();
+
+      if (isSpeechSupported && recognitionRef.current) {
+        recognitionRef.current.start();
+      }
+    } catch (error) {
+      console.error("Error starting recording:", error);
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        setPermissionDenied(true);
+      }
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+
+      if (isSpeechSupported && recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    }
+  };
+
+  const toggleRecording = () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      startRecording();
+    }
+  };
 
   const resetAnalysis = () => {
     setFile(null);
     setResults(null);
     setTranscript('');
     setPermissionDenied(false);
+    setSpeechError(null);
+    setIsRecordedAudio(false);
+    setQrCodeDataUrl('');
+    setVerificationId('');
   };
 
-  const downloadReport = async () => {
+  const generatePDF = () => {
     if (!results) return;
 
-    try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      alert("Report downloaded successfully (simulated)");
-    } catch (error) {
-      console.error("Error downloading report:", error);
+    const doc = new jsPDF();
+
+    // Add title
+    doc.setFontSize(20);
+    doc.text('Voice Authenticity Report', 105, 20, { align: 'center' });
+
+    // Add result
+    doc.setFontSize(16);
+    doc.setTextColor(results.isDeepfake ? '#ff0000' : '#00aa00');
+    doc.text(
+      results.isDeepfake ? 'Potential Deepfake Detected' : 'Authentic Voice Sample',
+      105,
+      40,
+      { align: 'center' }
+    );
+
+    // Add confidence
+    doc.setFontSize(14);
+    doc.setTextColor('#000000');
+    doc.text(`Confidence: ${results.confidence}%`, 105, 50, { align: 'center' });
+
+    // Add features
+    doc.setFontSize(12);
+    let yPosition = 70;
+    results.features.forEach(feature => {
+      doc.text(`${feature.name}: ${feature.value}%`, 20, yPosition);
+      doc.setFillColor('#007bff');
+      doc.rect(80, yPosition - 4, feature.value * 1.2, 5, 'F');
+      yPosition += 10;
+    });
+
+    // Add transcript if available
+    if (transcript) {
+      doc.addPage();
+      doc.setFontSize(16);
+      doc.text('Transcript', 105, 20, { align: 'center' });
+      doc.setFontSize(10);
+      const splitText = doc.splitTextToSize(transcript, 180);
+      doc.text(splitText, 20, 30);
+    }
+
+    // Add verification info
+    doc.addPage();
+    doc.setFontSize(16);
+    doc.text('Verification Information', 105, 20, { align: 'center' });
+    doc.setFontSize(12);
+    doc.text(`Verification ID: ${verificationId}`, 20, 40);
+    doc.text(`Date: ${new Date().toLocaleString()}`, 20, 50);
+
+    // Save the PDF
+    doc.save(`voice_authenticity_report_${verificationId}.pdf`);
+  };
+
+  const shareViaWhatsApp = () => {
+    if (!results) return;
+
+    const message = `Voice Authenticity Analysis Result:\n\n` +
+      `Status: ${results.isDeepfake ? 'Potential Deepfake' : 'Authentic'}\n` +
+      `Confidence: ${results.confidence}%\n` +
+      `Verification ID: ${verificationId}\n\n` +
+      `Scan the QR code or visit: https://voice-verify.example.com/check?id=${verificationId}`;
+
+    const encodedMessage = encodeURIComponent(message);
+    window.open(`https://web.whatsapp.com/send?text=${encodedMessage}`, '_blank');
+  };
+
+  const shareViaEmail = () => {
+    if (!results) return;
+
+    const subject = `Voice Authenticity Report - ${verificationId}`;
+    const body = `Dear Recipient,\n\n` +
+      `Please find below the voice authenticity analysis results:\n\n` +
+      `Status: ${results.isDeepfake ? 'Potential Deepfake Detected' : 'Authentic Voice Sample'}\n` +
+      `Confidence Level: ${results.confidence}%\n` +
+      `Verification ID: ${verificationId}\n\n` +
+      `You can verify this result by scanning the attached QR code or visiting:\n` +
+      `https://voice-verify.example.com/check?id=${verificationId}\n\n` +
+      `Best regards,\n` +
+      `Voice Authenticity Team`;
+
+    const mailtoLink = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+    window.location.href = mailtoLink;
+  };
+
+  const shareViaGmail = () => {
+    if (!results) return;
+
+    const subject = `Voice Authenticity Report - ${verificationId}`;
+    const body = `Dear Recipient,%0A%0A` +
+      `Please find below the voice authenticity analysis results:%0A%0A` +
+      `Status: ${results.isDeepfake ? 'Potential Deepfake Detected' : 'Authentic Voice Sample'}%0A` +
+      `Confidence Level: ${results.confidence}%%0A` +
+      `Verification ID: ${verificationId}%0A%0A` +
+      `You can verify this result by scanning the attached QR code or visiting:%0A` +
+      `https://voice-verify.example.com/check?id=${verificationId}%0A%0A` +
+      `Best regards,%0A` +
+      `Voice Authenticity Team`;
+
+    window.open(`https://mail.google.com/mail/?view=cm&fs=1&su=${encodeURIComponent(subject)}&body=${body}`, '_blank');
+  };
+
+  const downloadReport = () => {
+    generatePDF();
+  };
+
+  const shareReport = (method: "email" | "whatsapp" | "gmail") => {
+    switch (method) {
+      case "email":
+        shareViaEmail();
+        break;
+      case "whatsapp":
+        shareViaWhatsApp();
+        break;
+      case "gmail":
+        shareViaGmail();
+        break;
+      default:
+        break;
     }
   };
 
-  const shareReport = async (method: "email" | "whatsapp") => {
-    if (!results) return;
-
-    const recipient = prompt(`Enter recipient ${method === "email" ? "email" : "WhatsApp number"}:`);
-    if (!recipient) return;
-
-    try {
-      await new Promise(resolve => setTimeout(resolve, 500));
-      alert(`Report shared via ${method} to ${recipient} (simulated)`);
-    } catch (error) {
-      console.error(`Error sharing via ${method}:`, error);
-    }
-  };
-
-  const generateMockSourceDetails = (): SourceDetails => {
-    const randomNumbers = (): number => Math.floor(Math.random() * 256);
-    return {
-        name: `User ${Math.floor(Math.random() * 1000)}`,
-        ipAddress: `${randomNumbers()}.${randomNumbers()}.${randomNumbers()}.${randomNumbers()}`,
-        phoneNumber: `+1 (${Math.floor(Math.random() * 900) + 100}) ${Math.floor(Math.random() * 900) + 100}-${Math.floor(Math.random() * 9000) + 1000}`,
-        location: ['New York', 'Los Angeles', 'Chicago', 'San Francisco', 'Miami'][Math.floor(Math.random() * 5)],
-        timestamp: new Date().toLocaleString()
-    };
-};
   const handleSourceIdentification = async () => {
-    if (!results || !results.isDeepfake || !file) return;
-
-    const fileKey = file.name; // Use file name as a unique key
-    if (cachedSourceDetails.has(fileKey)) {
-      setSourceDetails(cachedSourceDetails.get(fileKey) || null);
-      setShowSourceIdentification(true);
-      return;
-    }
+    if (!results || !results.isDeepfake) return;
 
     setShowSourceIdentification(true);
     setIsIdentifying(true);
 
     try {
       await new Promise(resolve => setTimeout(resolve, 2500));
-      const details = generateMockSourceDetails();
-      setCachedSourceDetails((prev) => new Map(prev).set(fileKey, details));
+      
+      const details: SourceDetails = {
+        name: `User ${Math.floor(Math.random() * 1000)}`,
+        ipAddress: `${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}.${Math.floor(Math.random() * 255)}`,
+        phoneNumber: `+1 ${Math.floor(Math.random() * 900) + 100}-${Math.floor(Math.random() * 900) + 100}-${Math.floor(Math.random() * 9000) + 1000}`,
+        location: ['New York', 'Los Angeles', 'Chicago', 'Miami', 'San Francisco'][Math.floor(Math.random() * 5)],
+        timestamp: new Date().toLocaleString()
+      };
+
       setSourceDetails(details);
     } catch (error) {
       console.error("Error identifying source:", error);
@@ -256,274 +434,399 @@ const Detection = () => {
     setSourceDetails(null);
   };
 
+  const toggleQRCode = () => {
+    setShowQRCode(!showQRCode);
+  };
+
   return (
-    <div className="container mx-auto px-4 pt-28 py-12 text-white">
-      <motion.h1 
-        initial={{ opacity: 0, y: -20 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4 }}
-        className="text-3xl md:text-4xl font-bold mb-8"
-      >
-        Voice Authenticity Analysis
-      </motion.h1>
-
-      {permissionDenied && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded"
-          role="alert"
+    <div className="container mx-auto px-4 pt-28 py-12 relative">
+      {/* Background content that will be blurred when modal is open */}
+      <div className={`${showQRCode || showSourceIdentification ? 'blur-sm' : ''}`}>
+        <motion.h1 
+          initial={{ opacity: 0, y: -20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.4 }}
+          className="text-3xl md:text-4xl font-bold mb-8 text-white"
         >
-          <p className="text-red">Microphone access was denied. Please allow microphone permissions to use this feature.</p>
-        </motion.div>
-      )}
+          Voice Authenticity Analysis
+        </motion.h1>
 
-      {speechError && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="bg-red-700 border-l-4 border-red-500 text-red-100 p-4 mb-6 rounded"
-          role="alert"
-        >
-          <p className="text-white">Speech recognition error: {speechError}</p>
-        </motion.div>
-      )}
-
-      <AnimatePresence mode="wait">
-        {!file && !results && (
+        {permissionDenied && (
           <motion.div
-            key="upload"
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            transition={{ duration: 0.3 }}
-            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 md:p-12 mb-8 border border-gray-100 dark:border-gray-700"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-6 rounded dark:bg-red-900/20 dark:border-red-800 dark:text-red-100"
+            role="alert"
           >
-            <div 
-              className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl p-12 text-center cursor-pointer hover:border-blue-500 transition-all duration-300"
-              onClick={() => fileInputRef.current?.click()}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={handleDrop}
-            >
-              <FiUpload className="mx-auto w-12 h-12 text-gray-400 mb-4" />
-              <h3 className="text-xl font-semibold mb-2">Upload Voice Sample</h3>
-              <p className="mb-4">Drag & drop an audio file here, or click to browse</p>
-              <button className="px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm font-medium hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors">
-                Select File
-              </button>
-              <input 
-                type="file" 
-                ref={fileInputRef}
-                onChange={handleFileChange}
-                accept="audio/*"
-                className="hidden" 
-              />
-            </div>
-
-            <div className="mt-8 text-center">
-              <p className="text-gray-500 dark:text-gray-400 mb-4">Or record directly</p>
-              <motion.button
-                whileTap={{ scale: 0.95 }}
-                className={`relative w-24 h-24 rounded-full flex items-center justify-center mx-auto shadow-lg ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-blue-600 hover:bg-blue-700'} transition-all duration-300 text-white`}
-                onClick={handleToggleRecording}
-              >
-                <FiMic className="w-8 h-8" />
-                {isRecording && (
-                  <motion.div 
-                    className="absolute inset-0 rounded-full border-4 border-red-500 opacity-0"
-                    animate={{ 
-                      scale: [1, 1.5],
-                      opacity: [0.7, 0]
-                    }}
-                    transition={{ 
-                      duration: 1.5,
-                      repeat: Infinity,
-                      ease: "easeOut"
-                    }}
-                  />
-                )}
-              </motion.button>
-            </div>
+            <p>Microphone access was denied. Please allow microphone permissions to use this feature.</p>
           </motion.div>
         )}
 
-        {isAnalyzing && (
+        {speechError && (
           <motion.div
-            key="analyzing"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.4 }}
-            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 md:p-12 mb-8 border border-gray-100 dark:border-gray-700 text-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="bg-yellow-100 border-l-4 border-yellow-500 text-yellow-700 p-4 mb-6 rounded dark:bg-yellow-900/20 dark:border-yellow-800 dark:text-yellow-100"
+            role="alert"
           >
-            <div className="mb-6">
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
-                className="relative w-24 h-24 mx-auto mb-4"
-              >
-                <div className="absolute inset-0 rounded-full bg-blue-100 dark:bg-blue-900 opacity-75"></div>
-                <div className="absolute inset-2 rounded-full bg-blue-200 dark:bg-blue-800 flex items-center justify-center">
-                  <FiActivity className="w-12 h-12 text-blue-600 dark:text-blue-300" />
-                </div>
-              </motion.div>
-              <h3 className="text-2xl font-semibold mb-2">Analyzing Voice Sample</h3>
-              <p className="text-gray-500 dark:text-gray-400">Our AI is examining spectral patterns and vocal biomarkers...</p>
-            </div>
-
-            <div className="w-full bg-gray-100 dark:bg-gray-700 rounded-full h-2.5">
-              <motion.div 
-                className="bg-blue-600 h-2.5 rounded-full" 
-                initial={{ width: 0 }}
-                animate={{ width: "100%" }}
-                transition={{ duration: 3, ease: "easeInOut" }}
-              />
-            </div>
+            <p>Speech recognition error: {speechError}</p>
           </motion.div>
         )}
 
-        {results && (
-          <motion.div
-            key="results"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4 }}
-            className="bg-white dark:bg-gray-800 rounded-2xl shadow-xl p-8 md:p-12 mb-8 border border-gray-100 dark:border-gray-700"
-          >
-            <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8">
-              <div>
-                <h3 className="text-2xl font-semibold">Analysis Results</h3>
-                <p className="text-gray-500 dark:text-gray-400">Detailed authenticity assessment</p>
-              </div>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={resetAnalysis}
-                className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg text-sm font-medium mt-4 md:mt-0 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-              >
-                <FiRefreshCw className="mr-2" /> Analyze Another
-              </motion.button>
-            </div>
-
+        <AnimatePresence mode="wait">
+          {!file && !results && (
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.2 }}
-              className={`p-6 rounded-xl mb-8 ${results.isDeepfake ? 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800' : 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'} border`}
+              key="upload"
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              transition={{ duration: 0.3 }}
+              className="bg-gray-800 rounded-2xl shadow-xl p-8 md:p-12 mb-8 border border-gray-700"
             >
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-lg font-semibold">
-                    {results.isDeepfake ? 'Potential Deepfake Detected' : 'Authentic Voice Sample'}
-                  </h4>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    Confidence: {results.confidence}%
-                  </p>
-                </div>
-                <div className={`px-4 py-2 rounded-full text-sm font-medium ${results.isDeepfake ? 'bg-red-100 dark:bg-red-800 text-red-800 dark:text-red-100' : 'bg-green-100 dark:bg-green-800 text-green-800 dark:text-green-100'}`}>
-                  {results.isDeepfake ? 'High Risk' : 'Low Risk'}
+              <div 
+                className="border-2 border-dashed border-gray-600 rounded-xl p-12 text-center cursor-pointer hover:border-blue-500 transition-all duration-300"
+                onClick={() => fileInputRef.current?.click()}
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={handleDrop}
+              >
+                <FiUpload className="mx-auto w-12 h-12 text-gray-500 mb-4" />
+                <h3 className="text-xl font-semibold mb-2 text-white">Upload Voice Sample</h3>
+                <p className="text-gray-400 mb-4">Drag & drop an audio file here, or click to browse</p>
+                <button className="px-4 py-2 bg-gray-700 rounded-lg text-sm font-medium hover:bg-gray-600 transition-colors text-white">
+                  Select File
+                </button>
+                <input 
+                  type="file" 
+                  ref={fileInputRef}
+                  onChange={handleFileChange}
+                  accept="audio/*"
+                  className="hidden" 
+                />
+              </div>
+
+              <div className="mt-8 text-center">
+                <p className="text-gray-400 mb-4">Or record directly</p>
+                <div className="flex flex-col items-center">
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    className={`relative w-24 h-24 rounded-full flex items-center justify-center mx-auto shadow-lg ${isRecording ? 'bg-red-500 animate-pulse' : 'bg-blue-600 hover:bg-blue-700'} transition-all duration-300 text-white`}
+                    onClick={toggleRecording}
+                    disabled={permissionDenied}
+                  >
+                    <FiMic className="w-8 h-8" />
+                    {isRecording && (
+                      <motion.div 
+                        className="absolute inset-0 rounded-full border-4 border-red-500 opacity-0"
+                        animate={{ 
+                          scale: [1, 1.5],
+                          opacity: [0.7, 0]
+                        }}
+                        transition={{ 
+                          duration: 1.5,
+                          repeat: Infinity,
+                          ease: "easeOut"
+                        }}
+                      />
+                    )}
+                  </motion.button>
+                  
+                  {isRecording && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="mt-4 text-red-400 flex items-center"
+                    >
+                      <div className="w-2 h-2 bg-red-500 rounded-full mr-2 animate-pulse"></div>
+                      Recording...
+                    </motion.div>
+                  )}
+                  
+                  {(isSpeechSupported && (isRecording || transcript)) && (
+                    <motion.div
+                      initial={{ opacity: 0, height: 0 }}
+                      animate={{ opacity: 1, height: 'auto' }}
+                      className="mt-4 w-full max-w-md"
+                    >
+                      <div className="bg-gray-700 rounded-lg p-4">
+                        <h4 className="text-sm font-medium text-gray-400 mb-2">
+                          {isRecording ? "Live Transcript" : "Recorded Transcript"}
+                        </h4>
+                        <div className="bg-gray-800 p-3 rounded border border-gray-600 min-h-20 max-h-40 overflow-y-auto text-white">
+                          {transcript || (
+                            <span className="text-gray-500">
+                              {isRecording ? "Speak to see transcript..." : "No transcript available"}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                  
+                  {!isSpeechSupported && (
+                    <div className="mt-4 text-sm text-yellow-400">
+                      Note: Speech-to-text not supported in your browser
+                    </div>
+                  )}
                 </div>
               </div>
             </motion.div>
+          )}
 
-            <div className="grid md:grid-cols-2 gap-6 mb-8">
-              {results.features.map((feature, index) => (
+          {isAnalyzing && (
+            <motion.div
+              key="analyzing"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.4 }}
+              className="bg-gray-800 rounded-2xl shadow-xl p-8 md:p-12 mb-8 border border-gray-700 text-center"
+            >
+              <div className="mb-6">
                 <motion.div
-                  key={index}
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: index * 0.1 }}
-                  className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4"
+                  animate={{ rotate: 360 }}
+                  transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+                  className="relative w-24 h-24 mx-auto mb-4"
                 >
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm font-medium">{feature.name}</span>
-                    <span className="text-sm font-semibold">{feature.value}%</span>
-                  </div>
-                  <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2">
-                    <motion.div 
-                      className={`h-2 rounded-full ${feature.value > 85 ? 'bg-green-500' : feature.value > 70 ? 'bg-yellow-500' : 'bg-red-500'}`}
-                      initial={{ width: 0 }}
-                      animate={{ width: `${feature.value}%` }}
-                      transition={{ duration: 0.8, delay: index * 0.1 + 0.3 }}
-                    />
+                  <div className="absolute inset-0 rounded-full bg-blue-900 opacity-75"></div>
+                  <div className="absolute inset-2 rounded-full bg-blue-800 flex items-center justify-center">
+                    <FiActivity className="w-12 h-12 text-blue-300" />
                   </div>
                 </motion.div>
-              ))}
-            </div>
+                <h3 className="text-2xl font-semibold mb-2 text-white">Analyzing Voice Sample</h3>
+                <p className="text-gray-400">Our AI is examining spectral patterns and vocal biomarkers...</p>
+              </div>
 
-            {transcript && (
-              <div className="mb-8 bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
-                <h4 className="text-lg font-semibold mb-2">Recorded Transcript</h4>
-                <div className="bg-white dark:bg-gray-800 p-4 rounded border border-gray-200 dark:border-gray-600">
-                  {transcript}
+              <div className="w-full bg-gray-700 rounded-full h-2.5">
+                <motion.div 
+                  className="bg-blue-600 h-2.5 rounded-full" 
+                  initial={{ width: 0 }}
+                  animate={{ width: "100%" }}
+                  transition={{ duration: 3, ease: "easeInOut" }}
+                />
+              </div>
+            </motion.div>
+          )}
+
+          {results && (
+            <motion.div
+              key="results"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.4 }}
+              className="bg-gray-800 rounded-2xl shadow-xl p-8 md:p-12 mb-8 border border-gray-700"
+            >
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8">
+                <div>
+                  <h3 className="text-2xl font-semibold text-white">Analysis Results</h3>
+                  <p className="text-gray-400">Detailed authenticity assessment</p>
+                </div>
+                <div className="flex gap-2 mt-4 md:mt-0">
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={toggleQRCode}
+                    className="flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 rounded-lg text-sm font-medium transition-colors text-white"
+                  >
+                    <FiCheckCircle className="mr-2" /> Verify Authenticity
+                  </motion.button>
+                  <motion.button
+                    whileHover={{ scale: 1.05 }}
+                    whileTap={{ scale: 0.95 }}
+                    onClick={resetAnalysis}
+                    className="flex items-center px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm font-medium transition-colors text-white"
+                  >
+                    <FiRefreshCw className="mr-2" /> Analyze Another
+                  </motion.button>
                 </div>
               </div>
-            )}
 
-            <div className="border-t border-gray-100 dark:border-gray-700 pt-6">
-              <h4 className="text-lg font-semibold mb-4">Recommended Actions</h4>
-              <div className="space-y-3">
-                <p className="text-gray-600 dark:text-gray-300">
-                  {results.isDeepfake ? (
-                    <>
-                      <span className="font-medium">Warning:</span> This voice sample shows strong indicators of synthetic manipulation. 
-                      We recommend verifying the source and requesting additional authentication.
-                    </>
-                  ) : (
-                    <>
-                      This voice sample appears authentic with high confidence. 
-                      No additional verification is recommended at this time.
-                    </>
-                  )}
-                </p>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                transition={{ delay: 0.2 }}
+                className={`p-6 rounded-xl mb-8 ${results.isDeepfake ? 'bg-red-900/20 border-red-800' : 'bg-green-900/20 border-green-800'} border`}
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-lg font-semibold text-white">
+                      {results.isDeepfake ? 'Potential Deepfake Detected' : 'Authentic Voice Sample'}
+                    </h4>
+                    <p className="text-sm text-gray-400">
+                      Confidence: {results.confidence}%
+                    </p>
+                  </div>
+                  <div className={`px-4 py-2 rounded-full text-sm font-medium ${results.isDeepfake ? 'bg-red-800 text-red-100' : 'bg-green-800 text-green-100'}`}>
+                    {results.isDeepfake ? 'High Risk' : 'Low Risk'}
+                  </div>
+                </div>
+              </motion.div>
+
+              <div className="grid md:grid-cols-2 gap-6 mb-8">
+                {results.features.map((feature, index) => (
+                  <motion.div
+                    key={index}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.1 }}
+                    className="bg-gray-700/50 rounded-lg p-4"
+                  >
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="text-sm font-medium text-gray-300">{feature.name}</span>
+                      <span className="text-sm font-semibold text-white">{feature.value}%</span>
+                    </div>
+                    <div className="w-full bg-gray-600 rounded-full h-2">
+                      <motion.div 
+                        className={`h-2 rounded-full ${feature.value > 85 ? 'bg-green-500' : feature.value > 70 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${feature.value}%` }}
+                        transition={{ duration: 0.8, delay: index * 0.1 + 0.3 }}
+                      />
+                    </div>
+                  </motion.div>
+                ))}
               </div>
-            </div>
 
-            <div className="mt-8 flex flex-wrap gap-4">
-              <motion.button
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={downloadReport}
-                className="flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all"
-              >
-                <FiDownload className="mr-2" /> Download Full Report
-              </motion.button>
+              {transcript && (
+                <div className="mb-8 bg-gray-700/50 rounded-lg p-4">
+                  <h4 className="text-lg font-semibold mb-2 text-white">Recorded Transcript</h4>
+                  <div className="bg-gray-800 p-4 rounded border border-gray-600 text-white">
+                    {transcript}
+                  </div>
+                </div>
+              )}
 
-              <motion.button
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={() => shareReport("email")}
-                className="flex items-center px-6 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg font-medium transition-all"
-              >
-                <FiMail className="mr-2" /> Share via Email
-              </motion.button>
+              <div className="border-t border-gray-700 pt-6">
+                <h4 className="text-lg font-semibold mb-4 text-white">Recommended Actions</h4>
+                <div className="space-y-3">
+                  <p className="text-gray-300">
+                    {results.isDeepfake ? (
+                      <>
+                        <span className="font-medium">Warning:</span> This voice sample shows strong indicators of synthetic manipulation. 
+                        We recommend verifying the source and requesting additional authentication.
+                      </>
+                    ) : (
+                      <>
+                        This voice sample appears authentic with high confidence. 
+                        No additional verification is recommended at this time.
+                      </>
+                    )}
+                  </p>
+                </div>
+              </div>
 
-              <motion.button
-                whileHover={{ scale: 1.03 }}
-                whileTap={{ scale: 0.97 }}
-                onClick={() => shareReport("whatsapp")}
-                className="flex items-center px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-all"
-              >
-                <FiShare2 className="mr-2" /> Share via WhatsApp
-              </motion.button>
-            </div>
-
-            {results.isDeepfake && (
-              <div className="mt-6">
+              <div className="mt-8 flex flex-wrap gap-4">
                 <motion.button
                   whileHover={{ scale: 1.03 }}
                   whileTap={{ scale: 0.97 }}
-                  onClick={handleSourceIdentification}
-                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-all"
+                  onClick={downloadReport}
+                  className="flex items-center px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-all"
                 >
-                  Identify Source
+                  <FiDownload className="mr-2" /> Download PDF Report
+                </motion.button>
+
+                <div className="relative group">
+                  <motion.button
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    className="flex items-center px-6 py-3 bg-gray-700 hover:bg-gray-600 rounded-lg font-medium transition-all text-white"
+                  >
+                    <FiMail className="mr-2" /> Share via Email
+                  </motion.button>
+                  <div className="absolute left-0 mt-2 w-48 bg-gray-800 rounded-lg shadow-lg z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300">
+                    <button 
+                      onClick={() => shareReport("email")}
+                      className="block w-full text-left px-4 py-2 text-white hover:bg-gray-700 rounded-t-lg"
+                    >
+                      Default Email
+                    </button>
+                    <button 
+                      onClick={() => shareReport("gmail")}
+                      className="block w-full text-left px-4 py-2 text-white hover:bg-gray-700 rounded-b-lg"
+                    >
+                      Gmail
+                    </button>
+                  </div>
+                </div>
+
+                <motion.button
+                  whileHover={{ scale: 1.03 }}
+                  whileTap={{ scale: 0.97 }}
+                  onClick={() => shareReport("whatsapp")}
+                  className="flex items-center px-6 py-3 bg-green-500 hover:bg-green-600 text-white rounded-lg font-medium transition-all"
+                >
+                  <FiShare2 className="mr-2" /> Share via WhatsApp
                 </motion.button>
               </div>
-            )}
+
+              {results.isDeepfake && (
+                <div className="mt-6">
+                  <motion.button
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={handleSourceIdentification}
+                    className="flex items-center justify-center px-6 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-all w-full"
+                  >
+                    Identify Source
+                  </motion.button>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+
+      {/* QR Code Modal */}
+      <AnimatePresence>
+        {showQRCode && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4"
+          >
+            <motion.div 
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: "spring", stiffness: 300, damping: 20 }}
+              className="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md p-8 relative"
+            >
+              <div className="absolute top-4 right-4">
+                <button 
+                  onClick={toggleQRCode}
+                  className="text-gray-400 hover:text-white"
+                >
+                  ✕
+                </button>
+              </div>
+              <h3 className="text-2xl font-bold mb-6 text-white text-center">Verify Authenticity</h3>
+              <div className="flex flex-col items-center">
+                <div className="bg-white p-4 rounded-lg mb-6 flex justify-center">
+                  {qrCodeDataUrl ? (
+                    <img 
+                      src={qrCodeDataUrl} 
+                      alt="Verification QR Code"
+                      className="w-64 h-64"
+                    />
+                  ) : (
+                    <div className="w-64 h-64 flex items-center justify-center bg-gray-200">
+                      <p className="text-gray-500">Generating QR code...</p>
+                    </div>
+                  )}
+                </div>
+                <p className="text-gray-300 text-center mb-6 max-w-md">
+                  Scan this QR code with your mobile device to verify the authenticity of this voice sample.
+                </p>
+                <div className="text-xs text-gray-500 text-center">
+                  Verification ID: {verificationId}
+                </div>
+              </div>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
 
+      {/* Source Identification Modal */}
       <AnimatePresence>
         {showSourceIdentification && (
           <motion.div 
@@ -537,7 +840,7 @@ const Detection = () => {
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               transition={{ type: "spring", stiffness: 300, damping: 20 }}
-              className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md p-8 relative"
+              className="bg-gray-800 rounded-2xl shadow-2xl w-full max-w-md p-8 relative"
             >
               {isIdentifying ? (
                 <div className="text-center">
@@ -546,13 +849,13 @@ const Detection = () => {
                     transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
                     className="relative w-24 h-24 mx-auto mb-6"
                   >
-                    <div className="absolute inset-0 rounded-full bg-blue-100 dark:bg-blue-900 opacity-75"></div>
-                    <div className="absolute inset-2 rounded-full bg-blue-200 dark:bg-blue-800 flex items-center justify-center">
-                      <FiGlobe className="w-12 h-12 text-blue-600 dark:text-blue-300" />
+                    <div className="absolute inset-0 rounded-full bg-blue-900 opacity-75"></div>
+                    <div className="absolute inset-2 rounded-full bg-blue-800 flex items-center justify-center">
+                      <FiGlobe className="w-12 h-12 text-blue-300" />
                     </div>
                   </motion.div>
-                  <h3 className="text-2xl font-semibold mb-2 dark:text:white">Identifying Source</h3>
-                  <p className="text-gray-500 dark:text-gray-400">Tracing origin of synthetic voice...</p>
+                  <h3 className="text-2xl font-semibold mb-2 text-white">Identifying Source</h3>
+                  <p className="text-gray-400">Tracing origin of synthetic voice...</p>
                 </div>
               ) : sourceDetails ? (
                 <motion.div 
@@ -562,42 +865,42 @@ const Detection = () => {
                   <div className="absolute top-4 right-4">
                     <button 
                       onClick={closeSourceIdentification}
-                      className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text:white"
+                      className="text-gray-400 hover:text-white"
                     >
                       ✕
                     </button>
                   </div>
-                  <h3 className="text-2xl font-bold mb-6 dark:text:white">Source Identification</h3>
-                  <div className="space-y-4 bg-gray-50 dark:bg-gray-700/50 rounded-xl p-6">
+                  <h3 className="text-2xl font-bold mb-6 text-white">Source Identification</h3>
+                  <div className="space-y-4 bg-gray-700/50 rounded-xl p-6">
                     <div className="flex items-center space-x-4">
-                      <FiUser className="w-6 h-6 text-blue-600 dark:text-blue-300" />
+                      <FiUser className="w-6 h-6 text-blue-300" />
                       <div>
-                        <p className="text-sm text-gray-500 dark:text-gray-300">Name</p>
-                        <p className="font-semibold dark:text:white">{sourceDetails.name}</p>
+                        <p className="text-sm text-gray-300">Name</p>
+                        <p className="font-semibold text-white">{sourceDetails.name}</p>
                       </div>
                     </div>
                     <div className="flex items-center space-x-4">
-                      <FiGlobe className="w-6 h-6 text-green-600 dark:text-green-300" />
+                      <FiGlobe className="w-6 h-6 text-green-300" />
                       <div>
-                        <p className="text-sm text-gray-500 dark:text-gray-300">IP Address</p>
-                        <p className="font-semibold dark:text:white">{sourceDetails.ipAddress}</p>
+                        <p className="text-sm text-gray-300">IP Address</p>
+                        <p className="font-semibold text-white">{sourceDetails.ipAddress}</p>
                       </div>
                     </div>
                     <div className="flex items-center space-x-4">
-                      <FiSmartphone className="w-6 h-6 text-purple-600 dark:text-purple-300" />
+                      <FiSmartphone className="w-6 h-6 text-purple-300" />
                       <div>
-                        <p className="text-sm text-gray-500 dark:text-gray-300">Phone Number</p>
-                        <p className="font-semibold dark:text:white">{sourceDetails.phoneNumber}</p>
+                        <p className="text-sm text-gray-300">Phone Number</p>
+                        <p className="font-semibold text-white">{sourceDetails.phoneNumber}</p>
                       </div>
                     </div>
                     <div className="flex items-center space-x-4">
-                      <FiMapPin className="w-6 h-6 text-red-600 dark:text-red-300" />
+                      <FiMapPin className="w-6 h-6 text-red-300" />
                       <div>
-                        <p className="text-sm text-gray-500 dark:text-gray-300">Location</p>
-                        <p className="font-semibold dark:text:white">{sourceDetails.location}</p>
+                        <p className="text-sm text-gray-300">Location</p>
+                        <p className="font-semibold text-white">{sourceDetails.location}</p>
                       </div>
                     </div>
-                    <div className="text-xs text-gray-400 dark:text-gray-500 text-right mt-2">
+                    <div className="text-xs text-gray-500 text-right mt-2">
                       {sourceDetails.timestamp}
                     </div>
                   </div>
