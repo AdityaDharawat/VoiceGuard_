@@ -37,3 +37,5 @@ public
 QR_Images
 updated_deepfake_audio_data_with_tampered.csv
 uploads
+.ML/New/Data
+.watermarked_files
