@@ -65,5 +65,10 @@ python train_model.py
 - AES-256 encryption secures all data transfers.
 - Blockchain anchoring ensures tamper-proof verification.
 
+## 🎥 Video Demo
+For a detailed demonstration of the Deepfake Audio Detection System, check out the video below:
+
+[Watch the Demo on YouTube](https://youtu.be/UOoiyXeduo4)
+
 ## 🤝 Contributing
 Contributions are welcome! Please open an issue or submit a pull request.
